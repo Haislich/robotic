@@ -1,0 +1,41 @@
+name: Run tests with uv
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Cache venv
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ hashFiles('**/pyproject.toml') }}
+
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.13.2"
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    - name: Install project dependencies
+      run: |
+        uv venv .venv
+        source .venv/bin/activate
+        uv sync
+    
+    - name: Run tests
+      run: |
+        source .venv/bin/activate
+        pytest
