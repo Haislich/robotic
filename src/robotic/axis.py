@@ -11,8 +11,6 @@ class Axis(sympy.Matrix):
         x3: float | sympy.Float | sympy.Expr,
     ):
         obj = sympy.Matrix.__new__(cls, 3, 1, [x1, x2, x3])
-        # if obj.norm() != 1:
-        #     raise ValueError(f"Axis must have unitary norm, found {obj.norm()}")
         return obj
 
     def skew(self):
@@ -26,6 +24,9 @@ class Axis(sympy.Matrix):
         return Axis(*result)
 
     def __repr__(self):
+        return f"Axis({self[0]}, {self[1]}, {self[2]})"
+
+    def __str__(self):
         return f"Axis({self[0]}, {self[1]}, {self[2]})"
 
 

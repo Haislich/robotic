@@ -1,15 +1,15 @@
-from typing import Optional, Tuple, cast
+from typing import TypeGuard, Union, overload
 
 import sympy
 
-from robotic.axis import Axis
+from robotic.axis import Axis, Z
 
 
 class Rotation(sympy.Matrix):
     axis: Axis
-    theta: sympy.Symbol
+    theta: sympy.Expr | sympy.Basic | float
 
-    def __new__(cls, axis: Axis, theta: sympy.Symbol):
+    def __new__(cls, axis: Axis, theta: sympy.Expr | sympy.Basic | float):
         # Compute rotation matrix
         identity = sympy.eye(3)
         skew = axis.skew()
@@ -23,9 +23,35 @@ class Rotation(sympy.Matrix):
         obj.theta = theta
         return obj
 
+    def subs(self, *args, **kwargs):
+        axis = self.axis.subs(*args, **kwargs)
+        theta = self.theta
+        if isinstance(self.theta, sympy.Symbol):
+            theta = self.theta.subs(*args, **kwargs)
+
+        return Rotation(axis, theta)
+
+    @staticmethod
+    def is_rotation(obj) -> TypeGuard["Rotation"]:
+        return isinstance(obj, Rotation)
+
+    @overload
+    def __matmul__(self, other: "Rotation") -> "Rotation": ...
+
+    @overload
+    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+
+    # def __matmul__(
+    #     self, other: Union["Rotation", sympy.Matrix]
+    # ) -> Union["Rotation", sympy.Matrix]:
+    #     result = super().__matmul__(other)
+    #     if isinstance(other, Rotation):
+    #         return Rotation(self.axis, self.theta)  # use simplified axis/theta for now
+    #     return result
+
     def __matmul__(self, other: "Rotation | sympy.Matrix") -> "Rotation | sympy.Matrix":
         obj = super().__matmul__(other)
-        if isinstance(other, Rotation):
+        if Rotation.is_rotation(other):
             theta = sympy.atan2(
                 sympy.sqrt(
                     (obj[0, 1] - obj[1, 0]) ** 2
@@ -34,7 +60,7 @@ class Rotation(sympy.Matrix):
                 ),
                 (obj[0, 0] + obj[1, 1] + obj[2, 2]),
             )
-            obj.theta = theta
+            # obj.theta = theta
             # We now are working at a symbolic level.
             # This means that while the value of the rotation
             # Surely exists, an axis angle representation is not guaranteed.
@@ -60,7 +86,7 @@ class Rotation(sympy.Matrix):
                 sympy.nan,
                 sympy.nan,
             )
-            obj.axis = sympy.Piecewise(
+            axis = sympy.Piecewise(
                 (
                     (
                         Axis(
@@ -121,36 +147,36 @@ class Rotation(sympy.Matrix):
                     True,
                 ),
             )
+            return Rotation(axis, theta)  # type: ignore
 
         return obj
 
     def __repr__(self) -> str:
+        return f"Rotation(axis={self.axis}, theta={self.theta})"
+
+    def __str__(self) -> str:
         return (
             f"[{self[0, 0]}, {self[0, 1]}, {self[0, 2]}]\n"
-            + f"[{self[1, 0]}, {self[1, 1]}, {self[1, 2]}]\n"
-            + f"[{self[2, 0]}, {self[2, 1]}, {self[2, 2]}]"
+            f"[{self[1, 0]}, {self[1, 1]}, {self[1, 2]}]\n"
+            f"[{self[2, 0]}, {self[2, 1]}, {self[2, 2]}]"
         )
 
 
+# theta = sympy.symbols("theta")
+# # print(Rotation(Z, theta) @)
+# # print((Rotation(X, theta) @ Rotation(Z, theta)).axis)
+# # print((Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(theta, 0))
+# # print()
+# print(
+#     (Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(
+#         {theta: sympy.pi, sympy.Symbol("sign"): 1}
+#     )
+# )
+# # print(sympy.sqrt(theta).subs(theta, 4))
+# # print(sympy.Symbol("PlusMinus"))
+
+# # print(Rotation(X, theta) @ Rotation(Z, theta))
+# # print(type(Rotation(X, theta) @ sympy.Matrix([1, 2, 3])))
+
 theta = sympy.symbols("theta")
-# print(Rotation(Z, theta) @)
-# print((Rotation(X, theta) @ Rotation(Z, theta)).axis)
-# print((Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(theta, 0))
-# print()
-print(
-    (Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(
-        {theta: sympy.pi, sympy.Symbol("sign"): 1}
-    )
-)
-# print(sympy.sqrt(theta).subs(theta, 4))
-# print(sympy.Symbol("PlusMinus"))
-
-# print(Rotation(X, theta) @ Rotation(Z, theta))
-# print(type(Rotation(X, theta) @ sympy.Matrix([1, 2, 3])))
-
-# theta = sympy.Symbol("theta")
-# print(Rotation(X, theta).debug())
-# print(Rotation(Y, theta).debug())
-# print(Rotation(Z, theta).debug())
-# print(Rotation(Y, theta).debug())
-# print(Rotation(Z, theta).debug())
+print((Rotation(Z, theta) @ Rotation(Z, theta)))
