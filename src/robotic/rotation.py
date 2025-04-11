@@ -1,35 +1,90 @@
-from typing import TypeGuard, Union, overload
+from typing import Any, Optional, TypeGuard, cast, overload
 
 import sympy
 
-from robotic.axis import Axis, Z
+from robotic.axis import Axis
 
 
 class Rotation(sympy.Matrix):
-    axis: Axis
-    theta: sympy.Expr | sympy.Basic | float
+    _axis: Optional[Axis] = None
+    _theta: Optional[sympy.Expr | sympy.Basic | float] = None
 
     def __new__(cls, axis: Axis, theta: sympy.Expr | sympy.Basic | float):
         # Compute rotation matrix
         identity = sympy.eye(3)
-        skew = axis.skew()
+        skew = sympy.Matrix(axis.skew())
         twist = skew * sympy.sin(theta)
         flatten = (sympy.Integer(1) - sympy.cos(theta)) * skew**2
         rot = identity + twist + flatten
 
         # Create a new Matrix instance with the rotation data
         obj = sympy.Matrix.__new__(cls, rot.rows, rot.cols, rot)
-        obj.axis = axis
-        obj.theta = theta
         return obj
 
-    def subs(self, *args, **kwargs):
-        axis = self.axis.subs(*args, **kwargs)
+    @property
+    def axis(self) -> Axis:
+        if self._axis is not None:
+            return self._axis
         theta = self.theta
-        if isinstance(self.theta, sympy.Symbol):
-            theta = self.theta.subs(*args, **kwargs)
+        sin_theta = sympy.sin(theta)
 
-        return Rotation(axis, theta)
+        self = cast(Any, self)
+
+        regular_axis = Axis(
+            (self[2, 1] - self[1, 2]) / (sympy.Integer(2) * sin_theta),
+            (self[0, 2] - self[2, 0]) / (sympy.Integer(2) * sin_theta),
+            (self[1, 0] - self[0, 1]) / (sympy.Integer(2) * sin_theta),
+        )
+
+        singular_axis_pi = Axis(
+            sympy.sqrt((self[0, 0] + 1) / 2),
+            sympy.sqrt((self[1, 1] + 1) / 2),
+            sympy.sqrt((self[2, 2] + 1) / 2),
+        )
+
+        singular_axis_zero = Axis(sympy.nan, sympy.nan, sympy.nan)
+
+        axis = Axis(
+            sympy.Piecewise(
+                (singular_axis_zero[0], sympy.Eq(theta, 0)),
+                (singular_axis_pi[0], sympy.Eq(sin_theta, 0)),
+                (regular_axis[0], True),
+            ),
+            sympy.Piecewise(
+                (singular_axis_zero[1], sympy.Eq(theta, 0)),
+                (singular_axis_pi[1], sympy.Eq(sin_theta, 0)),
+                (regular_axis[1], True),
+            ),
+            sympy.Piecewise(
+                (singular_axis_zero[2], sympy.Eq(theta, 0)),
+                (singular_axis_pi[2], sympy.Eq(sin_theta, 0)),
+                (regular_axis[2], True),
+            ),
+        )
+        self._axis = axis
+        return axis
+
+    @property
+    def theta(self) -> sympy.Expr | sympy.Basic | float:
+        if self._theta is not None:
+            return self._theta
+        self = cast(Any, self)
+        theta = sympy.atan2(
+            sympy.sqrt(
+                (self[0, 1] - self[1, 0]) ** 2
+                + (self[0, 2] - self[2, 0]) ** 2
+                + (self[1, 2] - self[2, 1]) ** 2
+            ),
+            (self[0, 0] + self[1, 1] + self[2, 2]),
+        )
+        self._theta = theta
+        return theta
+
+    @classmethod
+    def from_matrix(cls, mat: sympy.Matrix) -> "Rotation":
+        if mat.shape != (3, 3):
+            raise ValueError("A rotation matrix is a 3 x 3")
+        return super().__new__(cls, 3, 3, mat)
 
     @staticmethod
     def is_rotation(obj) -> TypeGuard["Rotation"]:
@@ -41,114 +96,10 @@ class Rotation(sympy.Matrix):
     @overload
     def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
 
-    # def __matmul__(
-    #     self, other: Union["Rotation", sympy.Matrix]
-    # ) -> Union["Rotation", sympy.Matrix]:
-    #     result = super().__matmul__(other)
-    #     if isinstance(other, Rotation):
-    #         return Rotation(self.axis, self.theta)  # use simplified axis/theta for now
-    #     return result
-
     def __matmul__(self, other: "Rotation | sympy.Matrix") -> "Rotation | sympy.Matrix":
         obj = super().__matmul__(other)
         if Rotation.is_rotation(other):
-            theta = sympy.atan2(
-                sympy.sqrt(
-                    (obj[0, 1] - obj[1, 0]) ** 2
-                    + (obj[0, 2] - obj[2, 0]) ** 2
-                    + (obj[1, 2] - obj[2, 1]) ** 2
-                ),
-                (obj[0, 0] + obj[1, 1] + obj[2, 2]),
-            )
-            # obj.theta = theta
-            # We now are working at a symbolic level.
-            # This means that while the value of the rotation
-            # Surely exists, an axis angle representation is not guaranteed.
-            # The regular, case is when the solution do exists.
-            sin_theta = sympy.sin(theta)
-            regular_axis = Axis(
-                (obj[2, 1] - obj[1, 2]) / (sympy.Integer(2) * sin_theta),
-                (obj[0, 2] - obj[2, 0]) / (sympy.Integer(2) * sin_theta),
-                (obj[1, 0] - obj[0, 1]) / (sympy.Integer(2) * sin_theta),
-            )
-            # Now, in the case of singular matrix, sin(theta) = 0
-            # Here, we need to be clever because we need
-            # to handle both the positive and negative solution
-
-            singular_axis_pi = Axis(
-                sympy.sqrt((obj[0, 0] + 1) / sympy.Integer(2)),
-                sympy.sqrt((obj[1, 1] + 1) / sympy.Integer(2)),
-                sympy.sqrt((obj[2, 2] + 1) / sympy.Integer(2)),
-            )
-            # Finally if theta is 0 the axis is undefined
-            singular_axis_zero = Axis(
-                sympy.nan,
-                sympy.nan,
-                sympy.nan,
-            )
-            axis = sympy.Piecewise(
-                (
-                    (
-                        Axis(
-                            sympy.Piecewise(
-                                (singular_axis_zero[0], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[0], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[0], True),
-                            ),
-                            sympy.Piecewise(
-                                (singular_axis_zero[1], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[1], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[1], True),
-                            ),
-                            sympy.Piecewise(
-                                (singular_axis_zero[2], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[2], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[2], True),
-                            ),
-                        ),
-                        -Axis(
-                            sympy.Piecewise(
-                                (singular_axis_zero[0], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[0], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[0], True),
-                            ),
-                            sympy.Piecewise(
-                                (singular_axis_zero[1], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[1], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[1], True),
-                            ),
-                            sympy.Piecewise(
-                                (singular_axis_zero[2], sympy.Eq(theta, 0)),
-                                (singular_axis_pi[2], sympy.Eq(sin_theta, 0)),
-                                (regular_axis[2], True),
-                            ),
-                        ),
-                    ),
-                    sympy.Eq(theta**2, sympy.pi**2),
-                ),
-                (
-                    Axis(
-                        sympy.Piecewise(
-                            (singular_axis_zero[0], sympy.Eq(theta, 0)),
-                            (singular_axis_pi[0], sympy.Eq(sin_theta, 0)),
-                            (regular_axis[0], True),
-                        ),
-                        sympy.Piecewise(
-                            (singular_axis_zero[1], sympy.Eq(theta, 0)),
-                            (singular_axis_pi[1], sympy.Eq(sin_theta, 0)),
-                            (regular_axis[1], True),
-                        ),
-                        sympy.Piecewise(
-                            (singular_axis_zero[2], sympy.Eq(theta, 0)),
-                            (singular_axis_pi[2], sympy.Eq(sin_theta, 0)),
-                            (regular_axis[2], True),
-                        ),
-                    ),
-                    True,
-                ),
-            )
-            return Rotation(axis, theta)  # type: ignore
-
+            return Rotation.from_matrix(obj)
         return obj
 
     def __repr__(self) -> str:
@@ -160,23 +111,3 @@ class Rotation(sympy.Matrix):
             f"[{self[1, 0]}, {self[1, 1]}, {self[1, 2]}]\n"
             f"[{self[2, 0]}, {self[2, 1]}, {self[2, 2]}]"
         )
-
-
-# theta = sympy.symbols("theta")
-# # print(Rotation(Z, theta) @)
-# # print((Rotation(X, theta) @ Rotation(Z, theta)).axis)
-# # print((Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(theta, 0))
-# # print()
-# print(
-#     (Rotation(X, theta) @ Rotation(Z, theta)).axis.subs(
-#         {theta: sympy.pi, sympy.Symbol("sign"): 1}
-#     )
-# )
-# # print(sympy.sqrt(theta).subs(theta, 4))
-# # print(sympy.Symbol("PlusMinus"))
-
-# # print(Rotation(X, theta) @ Rotation(Z, theta))
-# # print(type(Rotation(X, theta) @ sympy.Matrix([1, 2, 3])))
-
-theta = sympy.symbols("theta")
-print((Rotation(Z, theta) @ Rotation(Z, theta)))
