@@ -44,13 +44,13 @@ class Rotation(sympy.Matrix):
     _euler_spec: Optional[EulerSpec] = None
 
     def __new__(cls, mat: sympy.Matrix):
-        if mat.shape != (3, 3):
-            raise ValueError("A rotation matrix is a 3 x 3")
+        if mat.shape[0] != mat.shape[1]:
+            raise ValueError("A rotation matrix is a square matrix")
         if not mat.det().equals(1):
             raise ValueError("A rotation matrix has determinant +1")
         if not mat.inv().equals(mat.T):
             raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
-        return super().__new__(cls, 3, 3, mat)
+        return super().__new__(cls, mat.cols, mat.rows, mat)
 
     @staticmethod
     def direct_axis_angle(r: Axis, theta: sympy.Expr | float) -> "Rotation":
@@ -58,7 +58,6 @@ class Rotation(sympy.Matrix):
         skew = sympy.Matrix(r.skew())
         twist = skew * sympy.sin(theta)
         flatten = (sympy.Integer(1) - sympy.cos(theta)) * skew**2
-        print(identity + twist + flatten)
         return Rotation(identity + twist + flatten)
 
     def inverse_axis_angle(self) -> AxisAngleSpec:
@@ -157,11 +156,16 @@ class Rotation(sympy.Matrix):
         return obj
 
     def __str__(self) -> str:
-        return (
-            f"[{self[0, 0]}, {self[0, 1]}, {self[0, 2]}]\n"
-            f"[{self[1, 0]}, {self[1, 1]}, {self[1, 2]}]\n"
-            f"[{self[2, 0]}, {self[2, 1]}, {self[2, 2]}]"
-        )
+        print(self.shape)
+        ret = ""
+        for row in range(self.rows):
+            ret += "["
+            for col in range(self.cols - 1):
+                ret += f"{self[row, col]}, "
+            ret += f"{self[row, self.cols - 1]}]"
+            if row < (self.rows - 1):
+                ret += "\n"
+        return ret
 
     def __setitem__(self, key, value) -> None:
         # Clear cached specs
@@ -172,18 +176,31 @@ class Rotation(sympy.Matrix):
         super().__setitem__(key, value)
 
         # Validate the new matrix is still a proper rotation
-        if self.shape != (3, 3):
-            raise ValueError("Matrix must remain 3x3 after update.")
         if not self.det().equals(1):
             raise ValueError("Matrix must have determinant +1 after update.")
         if not self.inv().equals(self.T):
             raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
 
 
+class HomogeneousRotation(Rotation):
+    def __new__(cls, rot: Rotation):
+        if rot.shape != (3, 3):
+            raise ValueError("Expected a 3x3 rotation matrix")
+
+        # Build top block: [R | 0]
+        top = rot.row_join(sympy.zeros(3, 1))
+
+        # Build bottom row: [0 0 0 1]
+        bottom = sympy.Matrix([[0, 0, 0, 1]])
+
+        # Assemble final homogeneous matrix
+        full = top.col_join(bottom)
+
+        # Create new Matrix instance with Rotation behavior
+        return sympy.Matrix.__new__(cls, 4, 4, full)
+
+
 # phi, theta, psi = sympy.symbols("phi theta psi")
-# print(
-#     Rotation.direct_euler(
-#         (phi, theta, psi),
-#         EulerSequence.ZXZ,
-#     )
-# )
+# rot = Rotation.direct_axis_angle(axis.Z, theta)
+# print(HomogeneousRotation(rot)[2, :])
+# # print(sympy.Matrix(1, 3, [0] * 3))
