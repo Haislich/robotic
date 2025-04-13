@@ -137,11 +137,16 @@ class Rotation(sympy.Matrix):
         self,
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
-    ) -> EulerAngles: ...
+    ) -> EulerAngles:
+        raise NotImplementedError
 
     @staticmethod
     def is_rotation(obj) -> TypeGuard["Rotation"]:
         return isinstance(obj, Rotation)
+
+    @staticmethod
+    def is_homogeneous_rotation(obj: sympy.Matrix) -> TypeGuard["HomogeneousRotation"]:
+        return isinstance(obj, HomogeneousRotation)
 
     @overload
     def __matmul__(self, other: "Rotation") -> "Rotation": ...
@@ -149,19 +154,20 @@ class Rotation(sympy.Matrix):
     @overload
     def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
 
-    def __matmul__(self, other: "Rotation | sympy.Matrix") -> "Rotation | sympy.Matrix":
-        obj = super().__matmul__(other)
-        if Rotation.is_rotation(other):
-            return Rotation(obj)
-        return obj
+    def __matmul__(self, other: "Rotation  |sympy.Matrix") -> "Rotation | sympy.Matrix":
+        if self.is_homogeneous_rotation(other):
+            return HomogeneousRotation(super().__matmul__(other.as_rotation()))
+        if self.is_rotation(other):
+            return Rotation(super().__matmul__(other))
+        return super().__matmul__(other)
 
     def __str__(self) -> str:
-        print(self.shape)
-        ret = ""
+        ret = f"{self.__class__.__name__}:\n"
+        max_len = max([len(str(elem)) for elem in self])
         for row in range(self.rows):
-            ret += "["
+            ret += "\t["
             for col in range(self.cols - 1):
-                ret += f"{self[row, col]}, "
+                ret += f"{str(self[row, col]):^{max_len}}, "
             ret += f"{self[row, self.cols - 1]}]"
             if row < (self.rows - 1):
                 ret += "\n"
@@ -184,8 +190,8 @@ class Rotation(sympy.Matrix):
 
 class HomogeneousRotation(Rotation):
     def __new__(cls, rot: Rotation):
-        if rot.shape != (3, 3):
-            raise ValueError("Expected a 3x3 rotation matrix")
+        # if rot.shape != (3, 3):
+        #     raise ValueError("Expected a 3x3 rotation matrix")
 
         # Build top block: [R | 0]
         top = rot.row_join(sympy.zeros(3, 1))
@@ -199,8 +205,38 @@ class HomogeneousRotation(Rotation):
         # Create new Matrix instance with Rotation behavior
         return sympy.Matrix.__new__(cls, 4, 4, full)
 
+    def as_rotation(self) -> Rotation:
+        scale = cast(sympy.Expr, self[3, 3])
+        mat = cast(sympy.Matrix, self[:3, :3])
+        if not scale.equals(1):
+            return Rotation(mat / scale)
+        return Rotation(mat)
 
-# phi, theta, psi = sympy.symbols("phi theta psi")
-# rot = Rotation.direct_axis_angle(axis.Z, theta)
-# print(HomogeneousRotation(rot)[2, :])
-# # print(sympy.Matrix(1, 3, [0] * 3))
+    @overload
+    def __matmul__(self, other: "HomogeneousRotation") -> "HomogeneousRotation": ...
+
+    @overload
+    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+
+    # type: ignore[override]
+    def __matmul__(  # type: ignore
+        self, other: "HomogeneousRotation | sympy.Matrix"
+    ) -> "HomogeneousRotation | sympy.Matrix":
+        if self.is_homogeneous_rotation(other):
+            return HomogeneousRotation(self.as_rotation() @ other.as_rotation())
+        if self.is_rotation(other):
+            return HomogeneousRotation(self.as_rotation() @ other)
+        return super().__matmul__(other)
+
+
+phi, theta, psi = sympy.symbols("phi theta psi")
+rot1 = Rotation.direct_axis_angle(axis.X, theta)
+rot2 = Rotation.direct_axis_angle(axis.Z, psi)
+
+
+# print(HomogeneousRotation(rot1) @ rot1)
+# print(HomogeneousRotation(rot1) @ HomogeneousRotation(rot1))
+# print((HomogeneousRotation(rot1) @ HomogeneousRotation(rot1)).as_rotation())
+print(type(rot1 @ HomogeneousRotation(rot1)))
+print(type(HomogeneousRotation(rot1) @ rot1))
+print(type(HomogeneousRotation(rot1) @ sympy.Matrix(4, 1, [1, 2, 3, 4])))
