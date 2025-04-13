@@ -3,8 +3,9 @@ from typing import Any, Optional, Tuple, TypeGuard, cast, overload
 
 import sympy
 
-from robotic import axis
-from robotic.axis import Axis
+from robotic.transformations import axis
+from robotic.transformations.axis import Axis
+from robotic.transformations.homogenous import HomogeneousTransformation
 
 
 class EulerOrder(enum.Enum):
@@ -43,17 +44,28 @@ class Rotation(sympy.Matrix):
     _axis_angle_spec: Optional[AxisAngleSpec] = None
     _euler_spec: Optional[EulerSpec] = None
 
-    def __new__(cls, mat: sympy.Matrix):
+    def __new__(
+        cls,
+        mat: sympy.Matrix = sympy.Matrix(
+            [
+                [1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ]
+        ),
+    ):
         if mat.shape[0] != mat.shape[1]:
             raise ValueError("A rotation matrix is a square matrix")
         if not mat.det().equals(1):
             raise ValueError("A rotation matrix has determinant +1")
-        if not mat.inv().equals(mat.T):
+        if not ((mat.T @ mat) == sympy.eye(3)):
             raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
     @staticmethod
-    def direct_axis_angle(r: Axis, theta: sympy.Expr | float) -> "Rotation":
+    def direct_axis_angle(
+        r: Axis = Axis(0, 0, 0), theta: sympy.Expr | float = 0.0
+    ) -> "Rotation":
         identity = sympy.eye(3)
         skew = sympy.Matrix(r.skew())
         twist = skew * sympy.sin(theta)
@@ -137,7 +149,7 @@ class Rotation(sympy.Matrix):
         self,
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
-    ) -> EulerAngles:
+    ) -> EulerSpec:
         raise NotImplementedError
 
     @staticmethod
@@ -145,11 +157,13 @@ class Rotation(sympy.Matrix):
         return isinstance(obj, Rotation)
 
     @staticmethod
-    def is_homogeneous_rotation(obj: sympy.Matrix) -> TypeGuard["HomogeneousRotation"]:
-        return isinstance(obj, HomogeneousRotation)
+    def is_homogeneous(obj: sympy.Matrix) -> TypeGuard["HomogeneousTransformation"]:
+        return isinstance(obj, HomogeneousTransformation)
 
     @overload
-    def __matmul__(self, other: "HomogeneousRotation") -> "HomogeneousRotation": ...
+    def __matmul__(
+        self, other: "HomogeneousTransformation"
+    ) -> "HomogeneousTransformation": ...
 
     @overload
     def __matmul__(self, other: "Rotation") -> "Rotation": ...
@@ -158,12 +172,14 @@ class Rotation(sympy.Matrix):
     def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
 
     def __matmul__(
-        self, other: "Rotation |HomogeneousRotation |sympy.Matrix"
-    ) -> "Rotation | HomogeneousRotation| sympy.Matrix":
-        if self.is_homogeneous_rotation(other):
-            return HomogeneousRotation(super().__matmul__(other.as_rotation()))
+        self, other: "Rotation |HomogeneousTransformation |sympy.Matrix"
+    ) -> "Rotation | HomogeneousTransformation| sympy.Matrix":
         if self.is_rotation(other):
             return Rotation(super().__matmul__(other))
+        if self.is_homogeneous(other):
+            return HomogeneousTransformation(
+                HomogeneousTransformation.identity().with_rotation(self) @ other
+            )
         return super().__matmul__(other)
 
     def __str__(self) -> str:
@@ -191,59 +207,3 @@ class Rotation(sympy.Matrix):
             raise ValueError("Matrix must have determinant +1 after update.")
         if not self.inv().equals(self.T):
             raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
-
-
-class HomogeneousRotation(Rotation):
-    def __new__(cls, rot: Rotation):
-        # if rot.shape != (3, 3):
-        #     raise ValueError("Expected a 3x3 rotation matrix")
-
-        # Build top block: [R | 0]
-        top = rot.row_join(sympy.zeros(3, 1))
-
-        # Build bottom row: [0 0 0 1]
-        bottom = sympy.Matrix([[0, 0, 0, 1]])
-
-        # Assemble final homogeneous matrix
-        full = top.col_join(bottom)
-
-        # Create new Matrix instance with Rotation behavior
-        return sympy.Matrix.__new__(cls, 4, 4, full)
-
-    def as_rotation(self) -> Rotation:
-        scale = cast(sympy.Expr, self[3, 3])
-        mat = cast(sympy.Matrix, self[:3, :3])
-        if not scale.equals(1):
-            return Rotation(mat / scale)
-        return Rotation(mat)
-
-    @overload
-    def __matmul__(self, other: "HomogeneousRotation") -> "HomogeneousRotation": ...
-
-    @overload
-    def __matmul__(self, other: "Rotation") -> "HomogeneousRotation": ...
-
-    @overload
-    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
-
-    def __matmul__(
-        self, other: "HomogeneousRotation | sympy.Matrix"
-    ) -> "HomogeneousRotation| sympy.Matrix":
-        if self.is_homogeneous_rotation(other):
-            return HomogeneousRotation(self.as_rotation() @ other.as_rotation())
-        if self.is_rotation(other):
-            return HomogeneousRotation(self.as_rotation() @ other)
-        return super().__matmul__(other)
-
-
-# phi, theta, psi = sympy.symbols("phi theta psi")
-# rot1 = Rotation.direct_axis_angle(axis.X, theta)
-# rot2 = Rotation.direct_axis_angle(axis.Z, psi)
-
-
-# # print(HomogeneousRotation(rot1) @ rot1)
-# # print(HomogeneousRotation(rot1) @ HomogeneousRotation(rot1))
-# # print((HomogeneousRotation(rot1) @ HomogeneousRotation(rot1)).as_rotation())
-# print(type(rot1 @ HomogeneousRotation(rot1)))
-# print((HomogeneousRotation(rot1) @ rot1).as_rotation())
-# print(type(HomogeneousRotation(rot1) @ sympy.Matrix(4, 1, [1, 2, 3, 4])))

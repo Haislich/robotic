@@ -1,7 +1,7 @@
 import sympy as sp
 
-from robotic.axis import Axis
-from robotic.rotation import EulerOrder, EulerSequence, Rotation
+from robotic.transformations.axis import Axis
+from robotic.transformations.rotation import EulerOrder, EulerSequence, Rotation
 
 x, y, z = sp.symbols("x y z")
 theta = sp.Symbol("theta")

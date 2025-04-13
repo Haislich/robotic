@@ -1,6 +1,6 @@
 import sympy as sp
 
-from robotic.axis import Axis
+from robotic.transformations.axis import Axis
 
 x, y, z = sp.symbols("x y z")
 
