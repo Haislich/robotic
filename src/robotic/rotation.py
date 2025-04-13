@@ -149,12 +149,17 @@ class Rotation(sympy.Matrix):
         return isinstance(obj, HomogeneousRotation)
 
     @overload
+    def __matmul__(self, other: "HomogeneousRotation") -> "HomogeneousRotation": ...
+
+    @overload
     def __matmul__(self, other: "Rotation") -> "Rotation": ...
 
     @overload
     def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
 
-    def __matmul__(self, other: "Rotation  |sympy.Matrix") -> "Rotation | sympy.Matrix":
+    def __matmul__(
+        self, other: "Rotation |HomogeneousRotation |sympy.Matrix"
+    ) -> "Rotation | HomogeneousRotation| sympy.Matrix":
         if self.is_homogeneous_rotation(other):
             return HomogeneousRotation(super().__matmul__(other.as_rotation()))
         if self.is_rotation(other):
@@ -216,12 +221,14 @@ class HomogeneousRotation(Rotation):
     def __matmul__(self, other: "HomogeneousRotation") -> "HomogeneousRotation": ...
 
     @overload
+    def __matmul__(self, other: "Rotation") -> "HomogeneousRotation": ...
+
+    @overload
     def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
 
-    # type: ignore[override]
-    def __matmul__(  # type: ignore
+    def __matmul__(
         self, other: "HomogeneousRotation | sympy.Matrix"
-    ) -> "HomogeneousRotation | sympy.Matrix":
+    ) -> "HomogeneousRotation| sympy.Matrix":
         if self.is_homogeneous_rotation(other):
             return HomogeneousRotation(self.as_rotation() @ other.as_rotation())
         if self.is_rotation(other):
@@ -229,14 +236,14 @@ class HomogeneousRotation(Rotation):
         return super().__matmul__(other)
 
 
-phi, theta, psi = sympy.symbols("phi theta psi")
-rot1 = Rotation.direct_axis_angle(axis.X, theta)
-rot2 = Rotation.direct_axis_angle(axis.Z, psi)
+# phi, theta, psi = sympy.symbols("phi theta psi")
+# rot1 = Rotation.direct_axis_angle(axis.X, theta)
+# rot2 = Rotation.direct_axis_angle(axis.Z, psi)
 
 
-# print(HomogeneousRotation(rot1) @ rot1)
-# print(HomogeneousRotation(rot1) @ HomogeneousRotation(rot1))
-# print((HomogeneousRotation(rot1) @ HomogeneousRotation(rot1)).as_rotation())
-print(type(rot1 @ HomogeneousRotation(rot1)))
-print(type(HomogeneousRotation(rot1) @ rot1))
-print(type(HomogeneousRotation(rot1) @ sympy.Matrix(4, 1, [1, 2, 3, 4])))
+# # print(HomogeneousRotation(rot1) @ rot1)
+# # print(HomogeneousRotation(rot1) @ HomogeneousRotation(rot1))
+# # print((HomogeneousRotation(rot1) @ HomogeneousRotation(rot1)).as_rotation())
+# print(type(rot1 @ HomogeneousRotation(rot1)))
+# print((HomogeneousRotation(rot1) @ rot1).as_rotation())
+# print(type(HomogeneousRotation(rot1) @ sympy.Matrix(4, 1, [1, 2, 3, 4])))
