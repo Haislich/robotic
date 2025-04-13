@@ -86,7 +86,7 @@ class Rotation(sympy.Matrix):
             raise ValueError("A rotation matrix is a square matrix")
         if not mat.det().equals(1):
             raise ValueError("A rotation matrix has determinant +1")
-        if not ((mat.T @ mat) == sympy.eye(3)):
+        if not (mat.T * mat - sympy.eye(3)).applyfunc(sympy.simplify).is_zero_matrix:
             raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
@@ -373,3 +373,15 @@ class HomogeneousTransformation(sympy.Matrix):
         if self.is_homogeneous(other):
             return HomogeneousTransformation(super().__matmul__((other)))
         return super().__matmul__((other))
+
+    def __str__(self) -> str:
+        ret = f"{self.__class__.__name__}:\n"
+        max_len = max([len(str(elem)) for elem in self])
+        for row in range(self.rows):
+            ret += "\t["
+            for col in range(self.cols - 1):
+                ret += f"{str(self[row, col]):^{max_len}}, "
+            ret += f"{self[row, self.cols - 1]}]"
+            if row < (self.rows - 1):
+                ret += "\n"
+        return ret
