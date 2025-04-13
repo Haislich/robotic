@@ -3,9 +3,37 @@ from typing import Any, Optional, Tuple, TypeGuard, cast, overload
 
 import sympy
 
-from robotic.transformations import axis
-from robotic.transformations.axis import Axis
-from robotic.transformations.homogenous import HomogeneousTransformation
+
+class Axis(sympy.Matrix):
+    def __new__(
+        cls,
+        x1: float | sympy.Float | sympy.Expr,
+        x2: float | sympy.Float | sympy.Expr,
+        x3: float | sympy.Float | sympy.Expr,
+    ):
+        obj = sympy.Matrix.__new__(cls, 3, 1, [x1, x2, x3])
+        return obj
+
+    def skew(self):
+        x = cast(sympy.Expr, self[0])
+        y = cast(sympy.Expr, self[1])
+        z = cast(sympy.Expr, self[2])
+        return sympy.Matrix([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+
+    def subs(self, *args, **kwargs) -> "Axis":
+        result = super().subs(*args, **kwargs)
+        return Axis(*result)
+
+    def __repr__(self):
+        return f"Axis({self[0]}, {self[1]}, {self[2]})"
+
+    def __str__(self):
+        return f"Axis({self[0]}, {self[1]}, {self[2]})"
+
+
+X = Axis(1, 0, 0)
+Y = Axis(0, 1, 0)
+Z = Axis(0, 0, 1)
 
 
 class EulerOrder(enum.Enum):
@@ -129,7 +157,7 @@ class Rotation(sympy.Matrix):
     ) -> "Rotation":
         alpha, beta, gamma = angles
         angle_map = [alpha, beta, gamma]
-        axis_map = {"X": axis.X, "Y": axis.Y, "Z": axis.Z}
+        axis_map = {"X": X, "Y": Y, "Z": Z}
 
         axes = [axis_map[c] for c in sequence.value]
         # Create each elemental rotation
@@ -207,3 +235,141 @@ class Rotation(sympy.Matrix):
             raise ValueError("Matrix must have determinant +1 after update.")
         if not self.inv().equals(self.T):
             raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
+
+
+class Translation(sympy.Matrix):
+    def __new__(cls, vec: sympy.Matrix = sympy.Matrix([0, 0, 0])):
+        if vec.shape != (3, 1):
+            raise ValueError("Translation must be 2D or 3D column vector.")
+        return sympy.Matrix.__new__(cls, vec.rows, vec.cols, vec)
+
+    @staticmethod
+    def is_homogeneous(obj: sympy.Matrix) -> TypeGuard["HomogeneousTransformation"]:
+        return isinstance(obj, HomogeneousTransformation)
+
+    @overload
+    def __matmul__(
+        self, other: "HomogeneousTransformation"
+    ) -> "HomogeneousTransformation": ...
+
+    @overload
+    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+
+    def __matmul__(
+        self, other: "HomogeneousTransformation  | Translation | sympy.Matrix"
+    ) -> "HomogeneousTransformation | sympy.Matrix":
+        if self.is_homogeneous(other):
+            return HomogeneousTransformation(super().__matmul__((other)))
+        return super().__matmul__((other))
+
+
+class HomogeneousTransformation(sympy.Matrix):
+    def __new__(cls, matrix: sympy.Matrix):
+        if matrix.shape != (4, 4):
+            raise ValueError("Homogeneous transformation must be a 4x4 matrix")
+
+        # Validate components, the underlying constructor should fail
+        _rotation = Rotation(cast(sympy.Matrix, matrix[:3, :3]))
+        _translation = Translation(cast(sympy.Matrix, matrix[:3, 3]))
+
+        bottom = matrix.row(3)
+        if not all(elem.equals(0) for elem in bottom[:3]):
+            raise ValueError(
+                "The first three components of the last row should be all zeros"
+            )
+        if bottom[3].equals(0):
+            raise ValueError("The scale value cannot be 0")
+        return super().__new__(cls, 4, 4, matrix)
+
+    @property
+    def scale(self) -> sympy.Expr:
+        return cast(sympy.Expr, self[3, 3])
+
+    @staticmethod
+    def identity() -> "HomogeneousTransformation":
+        return HomogeneousTransformation(sympy.eye(4))
+
+    @staticmethod
+    def from_rotation(rotation: Rotation) -> "HomogeneousTransformation":
+        top = rotation.row_join(Translation())
+
+        bottom = sympy.Matrix([[0, 0, 0, 1]])
+
+        # Assemble final homogeneous matrix
+        matrix = top.col_join(bottom)
+
+        return HomogeneousTransformation(matrix)
+
+    def as_rotation(self) -> "Rotation":
+        mat = cast(sympy.Matrix, self[:3, :3])
+        return Rotation(mat / self.scale)
+
+    def with_rotation(self, rotation: Rotation) -> "HomogeneousTransformation":
+        return HomogeneousTransformation(
+            rotation.row_join(self.as_translation()).col_join(
+                sympy.Matrix([[0, 0, 0, self.scale]])
+            )
+        )
+
+    @staticmethod
+    def is_rotation(obj) -> TypeGuard[Rotation]:
+        return isinstance(obj, Rotation)
+
+    @staticmethod
+    def from_translation(translation: Translation) -> "HomogeneousTransformation":
+        top = Rotation().row_join(translation)
+
+        # Build bottom row: [0 0 0 1]
+        bottom = sympy.Matrix([[0, 0, 0, 1]])
+
+        # Assemble final homogeneous matrix
+        matrix = top.col_join(bottom)
+
+        return HomogeneousTransformation(matrix)
+
+    def as_translation(self) -> "Translation":
+        return Translation(cast(sympy.Matrix, self[:3, 3]))
+
+    @staticmethod
+    def is_translation(obj: sympy.Matrix) -> TypeGuard[Translation]:
+        return isinstance(obj, Translation)
+
+    def with_translation(
+        self, new_translation: Translation
+    ) -> "HomogeneousTransformation":
+        return HomogeneousTransformation(
+            self.as_rotation()
+            .row_join(new_translation)
+            .col_join(sympy.Matrix([[0, 0, 0, self.scale]]))
+        )
+
+    @staticmethod
+    def is_homogeneous(obj: sympy.Matrix) -> TypeGuard["HomogeneousTransformation"]:
+        return isinstance(obj, HomogeneousTransformation)
+
+    @overload
+    def __matmul__(self, other: "Translation") -> "HomogeneousTransformation": ...
+
+    @overload
+    def __matmul__(self, other: "Rotation") -> "HomogeneousTransformation": ...
+
+    @overload
+    def __matmul__(
+        self, other: "HomogeneousTransformation"
+    ) -> "HomogeneousTransformation": ...
+
+    @overload
+    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+
+    def __matmul__(
+        self, other: "HomogeneousTransformation | Rotation | Translation | sympy.Matrix"
+    ) -> "HomogeneousTransformation | sympy.Matrix":
+        if self.is_rotation(other):
+            return super().__matmul__(HomogeneousTransformation.from_rotation(other))
+
+        if self.is_translation(other):
+            return super().__matmul__(HomogeneousTransformation.from_translation(other))
+
+        if self.is_homogeneous(other):
+            return HomogeneousTransformation(super().__matmul__((other)))
+        return super().__matmul__((other))

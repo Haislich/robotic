@@ -2,7 +2,7 @@ from typing import TypeGuard, overload
 
 import sympy
 
-from robotic.transformations.homogenous import HomogeneousTransformation
+from robotic.transformations.homogeneous import HomogeneousTransformation
 
 
 class Translation(sympy.Matrix):
