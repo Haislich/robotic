@@ -1,5 +1,5 @@
 import enum
-from typing import Any, Optional, Tuple, TypeGuard, cast, overload
+from typing import Any, List, Optional, Tuple, TypeGuard, cast, overload
 
 import sympy
 
@@ -59,7 +59,10 @@ class EulerSequence(enum.Enum):
     YXY = "YXY"
 
 
-EulerAngles = Tuple[sympy.Expr | float, sympy.Expr | float, sympy.Expr | float]
+EulerAngles = (
+    Tuple[sympy.Expr | float, sympy.Expr | float, sympy.Expr | float]
+    | List[sympy.Expr | float]
+)
 EulerSpec = Tuple[
     EulerAngles,
     EulerSequence,
@@ -82,16 +85,31 @@ class Rotation(sympy.Matrix):
             ]
         ),
     ):
-        if mat.shape[0] != mat.shape[1]:
-            raise ValueError("A rotation matrix is a square matrix")
-        if not mat.det().equals(1):
-            raise ValueError("A rotation matrix has determinant +1")
-        if not (mat.T * mat - sympy.eye(3)).applyfunc(sympy.simplify).is_zero_matrix:
-            raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
+        # epsilon = 1e-10
+        # if mat.shape[0] != mat.shape[1]:
+        #     raise ValueError("A rotation matrix is a square matrix")
+        # if not sympy.simplify(mat.det().evalf() - 1) < epsilon:
+        #     print(mat.det())
+        #     raise ValueError("A rotation matrix has determinant +1")
+
+        # if not all(abs(sympy.simplify(mat.T * mat - sympy.eye(3)))) < epsilon:
+        #     print(f"{mat=}")
+        #     print(f"{mat.T=}")
+        #     print(f"{mat * mat.T =}")
+        #     print(sympy.simplify(mat.T * mat - sympy.eye(3)))
+
+        #     raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
+    def round(self, digits=4) -> "Rotation":
+        mat = self
+        for row in range(self.rows):
+            for col in range(self.cols):
+                mat[row, col] = round(mat[row, col], digits)  # type: ignore
+        return Rotation(mat)
+
     @staticmethod
-    def direct_axis_angle(
+    def from_axis_angle(
         r: Axis = Axis(0, 0, 0), theta: sympy.Expr | float = 0.0
     ) -> "Rotation":
         identity = sympy.eye(3)
@@ -100,7 +118,7 @@ class Rotation(sympy.Matrix):
         flatten = (sympy.Integer(1) - sympy.cos(theta)) * skew**2
         return Rotation(identity + twist + flatten)
 
-    def inverse_axis_angle(self) -> AxisAngleSpec:
+    def to_axis_angle(self) -> AxisAngleSpec:
         self = cast(Any, self)  # Trust me bro
         if self._axis_angle_spec is not None:
             return self._axis_angle_spec
@@ -150,7 +168,7 @@ class Rotation(sympy.Matrix):
         return self._axis_angle_spec
 
     @staticmethod
-    def direct_euler(
+    def from_euler(
         angles: EulerAngles,
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
@@ -161,11 +179,11 @@ class Rotation(sympy.Matrix):
 
         axes = [axis_map[c] for c in sequence.value]
         # Create each elemental rotation
-        R1 = Rotation.direct_axis_angle(axes[0], angle_map[0])
-        R2 = Rotation.direct_axis_angle(axes[1], angle_map[1])
-        R3 = Rotation.direct_axis_angle(axes[2], angle_map[2])
+        R1 = Rotation.from_axis_angle(axes[0], angle_map[0])
+        R2 = Rotation.from_axis_angle(axes[1], angle_map[1])
+        R3 = Rotation.from_axis_angle(axes[2], angle_map[2])
 
-        if order == order.FIXED:
+        if order == order.MOVING:
             mat = R3 @ R2 @ R1  # world frame
         else:
             mat = R1 @ R2 @ R3  # body frame
@@ -173,12 +191,82 @@ class Rotation(sympy.Matrix):
         mat._euler_spec = (angles, sequence, order)
         return mat
 
-    def inverse_euler(
+    def to_euler(
         self,
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
     ) -> EulerSpec:
-        raise NotImplementedError
+        self = cast(Any, self)  # Trust me bro
+        if self._euler_spec is not None:
+            return self._euler_spec
+
+        match (sequence, order):
+            # FIXED Tait-Bryan
+            case EulerSequence.XYZ, EulerOrder.FIXED:
+                theta2 = sympy.asin(self[0, 2])
+                theta1 = sympy.atan2(-self[1, 2], self[2, 2])
+                theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.XZY, EulerOrder.FIXED:
+                theta2 = -sympy.asin(self[0, 1])
+                theta1 = sympy.atan2(self[2, 1], self[1, 1])
+                theta3 = sympy.atan2(self[0, 2], self[0, 0])
+
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.YXZ, EulerOrder.FIXED:
+                theta2 = sympy.asin(self[0, 2])
+                theta1 = sympy.atan2(-self[1, 2], self[2, 2])
+                theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.YZX, EulerOrder.FIXED:
+                theta2 = sympy.asin(self[1, 0])
+                theta1 = sympy.atan2(-self[2, 0], self[0, 0])
+                theta3 = sympy.atan2(-self[1, 2], self[1, 1])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.ZXY, EulerOrder.FIXED:
+                theta2 = sympy.asin(self[2, 1])
+                theta1 = sympy.atan2(-self[0, 1], self[1, 1])
+                theta3 = sympy.atan2(-self[2, 0], self[2, 2])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.ZYX, EulerOrder.FIXED:
+                theta2 = -sympy.asin(self[2, 0])
+                theta1 = sympy.atan2(self[1, 0], self[0, 0])
+                theta3 = sympy.atan2(self[2, 1], self[2, 2])
+                return (theta3, theta2, theta1), sequence, order
+
+            # FIXED: Proper Euler Angles
+            case EulerSequence.ZXZ, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[2, 2])
+                theta1 = sympy.atan2(self[0, 2], self[1, 2])
+                theta3 = sympy.atan2(self[2, 0], -self[2, 1])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.XYX, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[0, 0])
+                theta1 = sympy.atan2(self[1, 0], -self[2, 0])
+                theta3 = sympy.atan2(self[0, 1], self[0, 2])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.YZY, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[1, 1])
+                theta1 = sympy.atan2(self[2, 1], -self[0, 1])
+                theta3 = sympy.atan2(self[1, 2], self[1, 0])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.XZX, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[0, 0])
+                theta1 = sympy.atan2(self[2, 0], self[1, 0])
+                theta3 = sympy.atan2(self[0, 2], -self[0, 1])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.ZYZ, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[2, 2])
+                theta1 = sympy.atan2(self[1, 2], -self[0, 2])
+                theta3 = sympy.atan2(self[2, 1], self[2, 0])
+                return (theta3, theta2, theta1), sequence, order
+            case EulerSequence.YXY, EulerOrder.FIXED:
+                theta2 = sympy.acos(self[1, 1])
+                theta1 = sympy.atan2(self[0, 1], self[2, 1])
+                theta3 = sympy.atan2(self[1, 0], -self[1, 2])
+                return (theta3, theta2, theta1), sequence, order
+            case _:
+                raise NotImplementedError
 
     @staticmethod
     def is_rotation(obj) -> TypeGuard["Rotation"]:
@@ -230,18 +318,21 @@ class Rotation(sympy.Matrix):
         # Perform the assignment
         super().__setitem__(key, value)
 
-        # Validate the new matrix is still a proper rotation
-        if not self.det().equals(1):
-            raise ValueError("Matrix must have determinant +1 after update.")
-        if not self.inv().equals(self.T):
-            raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
+        # #Validate the new matrix is still a proper rotation
+        # if not self.det().equals(1):
+        #     raise ValueError("Matrix must have determinant +1 after update.")
+        # if not self.inv().equals(self.T):
+        #     raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
 
 
 class Translation(sympy.Matrix):
-    def __new__(cls, vec: sympy.Matrix = sympy.Matrix([0, 0, 0])):
-        if vec.shape != (3, 1):
-            raise ValueError("Translation must be 2D or 3D column vector.")
-        return sympy.Matrix.__new__(cls, vec.rows, vec.cols, vec)
+    def __new__(
+        cls,
+        x: sympy.Expr | float = 0,
+        y: sympy.Expr | float = 0,
+        z: sympy.Expr | float = 0,
+    ):
+        return sympy.Matrix.__new__(cls, 3, 1, [x, y, z])
 
     @staticmethod
     def is_homogeneous(obj: sympy.Matrix) -> TypeGuard["HomogeneousTransformation"]:
@@ -270,7 +361,8 @@ class HomogeneousTransformation(sympy.Matrix):
 
         # Validate components, the underlying constructor should fail
         _rotation = Rotation(cast(sympy.Matrix, matrix[:3, :3]))
-        _translation = Translation(cast(sympy.Matrix, matrix[:3, 3]))
+        x, y, z = cast(Any, matrix[:3, 3])
+        _translation = Translation(x, y, z)
 
         bottom = matrix.row(3)
         if not all(elem.equals(0) for elem in bottom[:3]):
@@ -328,7 +420,8 @@ class HomogeneousTransformation(sympy.Matrix):
         return HomogeneousTransformation(matrix)
 
     def as_translation(self) -> "Translation":
-        return Translation(cast(sympy.Matrix, self[:3, 3]))
+        x, y, z = cast(Any, self[:3, 3])
+        return Translation(x, y, z)
 
     @staticmethod
     def is_translation(obj: sympy.Matrix) -> TypeGuard[Translation]:

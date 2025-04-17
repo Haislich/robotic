@@ -21,6 +21,7 @@ class JointType(Enum):
 
 class Manipulator:
     _dh_table: Optional[pd.DataFrame] = None
+    _dh_matrix: Optional[HomogeneousTransformation] = None
 
     def __init__(
         self,
@@ -57,13 +58,12 @@ class Manipulator:
             )
         return self._dh_table
 
-    @property
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
         T = HomogeneousTransformation.identity()
         for _, row in self.dh_table.iterrows():
             T = T @ (
                 HomogeneousTransformation.from_rotation(
-                    Rotation.direct_axis_angle(Z, row.theta)
+                    Rotation.from_axis_angle(Z, row.theta)
                 )
                 @ HomogeneousTransformation.from_translation(
                     Translation(sympy.Matrix([0, 0, row.d]))
@@ -72,7 +72,7 @@ class Manipulator:
                     Translation(sympy.Matrix([row.a, 0, 0]))
                 )
                 @ HomogeneousTransformation.from_rotation(
-                    Rotation.direct_axis_angle(X, row.alpha)
+                    Rotation.from_axis_angle(X, row.alpha)
                 )
             )
         if simplify:
