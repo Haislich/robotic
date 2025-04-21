@@ -14,13 +14,72 @@ from robotic.transformations import (
 )
 
 
+class DHTable(pd.DataFrame):
+    # Required for pandas subclassing
+    _metadata = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # If needed, convert entries to sympy objects
+        for col in ["a", "alpha", "d", "theta"]:
+            if col in self.columns:
+                self[col] = self[col].apply(
+                    lambda x: sympy.sympify(x) if not isinstance(x, str) else x
+                )
+
+    def __str__(self):
+        # Pretty plain-text for print()
+        # Columns: align for print (as string)
+        colwidths = [
+            max(len(str(x)) for x in [col] + self[col].astype(str).tolist())
+            for col in self.columns
+        ]
+        header = " | ".join(
+            [str(col).ljust(w) for col, w in zip(self.columns, colwidths)]
+        )
+        lines = [header, "-" * len(header)]
+        for _, row in self.iterrows():
+            line = " | ".join([str(x).ljust(w) for x, w in zip(row, colwidths)])
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _repr_html_(self): ...
+    def _repr_latex_(self):
+        headers = [r"a", r"\alpha", "d", r"\theta", "type"]
+        header_row = " & ".join(headers) + r" \\ \hline"
+        rows = []
+
+        for _, row in self.iterrows():
+            formatted = []
+            for x in row:
+                if isinstance(x, (int, float, sympy.Basic)):
+                    formatted.append(sympy.latex(sympy.sympify(x)))
+                elif isinstance(x, str) and x.upper() in {"PRISMATIC", "REVOLUTE"}:
+                    formatted.append(r"\mathrm{" + x.capitalize() + r"}")
+                else:
+                    formatted.append(str(x))
+            rows.append(
+                " & ".join(formatted) + r" \\[0.5em]"
+            )  # Add vertical sympyacing
+
+        latex_table = (
+            r"$" + "\n"
+            r"\begin{array}{|c|c|c|c|c|}" + "\n"
+            r"\hline" + "\n" + header_row + "\n" + "\n".join(rows) + "\n"
+            r"\hline" + "\n"
+            r"\end{array}" + "\n"
+            r"$"
+        )
+        return latex_table
+
+
 class JointType(Enum):
     PRISMATIC = auto()
     REVOLUTE = auto()
 
 
 class Manipulator:
-    _dh_table: Optional[pd.DataFrame] = None
+    _dh_table: Optional[DHTable] = None
     _dh_matrix: Optional[HomogeneousTransformation] = None
 
     def __init__(
@@ -41,8 +100,7 @@ class Manipulator:
 
         self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(n)]
 
-    # @property
-    def dh_table(self) -> pd.DataFrame:
+    def dh_table(self) -> DHTable:
         if self._dh_table is None:
             rows = []
             for i, joint_type in enumerate(self.joint_types):
@@ -60,9 +118,7 @@ class Manipulator:
                     d = q_i + d_offset
 
                 rows.append((a, alpha, d, theta, joint_type.name))
-            self._dh_table = pd.DataFrame(
-                rows, columns=["a", "alpha", "d", "theta", "type"]
-            )
+            self._dh_table = DHTable(rows, columns=["a", "alpha", "d", "theta", "type"])
         return self._dh_table
 
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
@@ -83,21 +139,21 @@ class Manipulator:
         return T
 
 
-# link_lenghts = [sympy.symbols("a_1"), sympy.symbols("a_2"), 0, 0]
-# link_twists = [0, 0, 0, sympy.pi]
 # joint_types = [
-#     JointType.REVOLUTE,
-#     JointType.REVOLUTE,
+#     JointType.PRISMATIC,
 #     JointType.PRISMATIC,
 #     JointType.REVOLUTE,
 # ]
-
+# # a
+# link_lengths = [0, 0, sympy.symbols("L")]
+# # alpha
+# link_twists = [-sympy.pi / 2, -sympy.pi / 2, 0]
 # man = Manipulator(
-#     link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
-# ).dh_table
+#     link_lengths=link_lengths,
+#     link_twists=link_twists,
+#     joint_types=joint_types,
+#     theta_offsets=[0.0, -sympy.pi / 2, 0],
+# )
+# man.dh_table()
 
-
-# mat = Manipulator(
-#     link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
-# ).dh_matrix
-# print(mat)
+# %%

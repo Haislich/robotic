@@ -8,7 +8,21 @@ from mpl_toolkits.mplot3d import Axes3D
 from robotic.transformations import Rotation
 
 
-def draw_right_handed_frame(rotation=Rotation.identity(), length=2.5):
+def draw_frame(
+    rotation=Rotation.identity(),
+    label="",
+    *,
+    length=2.5,
+    basis=Rotation(
+        sympy.Matrix(
+            [
+                [1, 0, 0],
+                [0, 0, -1],
+                [0, 1, 0],
+            ]
+        )
+    ),
+):
     """
     Draw a right-handed coordinate frame with X→right, Y↑, Z⊙out of screen.
 
@@ -23,21 +37,8 @@ def draw_right_handed_frame(rotation=Rotation.identity(), length=2.5):
 
     origin = np.array([0, 0, 0])
 
-    # Matplotlib's default frame is:
-    #   X right, Y into screen, Z up
-    # We want:
-    #   X right, Y up, Z out of screen
-    # So we rotate the frame accordingly
-    change_of_basis = sympy.Matrix(
-        [
-            [1, 0, 0],
-            [0, 0, 1],
-            [0, 1, 0],
-        ]
-    )
-
     # Apply rotation on top of default screen-oriented frame
-    frame = change_of_basis @ np.array(rotation)
+    frame = np.array(basis) @ np.array(rotation)
 
     # Scaled axes
     x_axis = frame[:, 0] * length
@@ -58,8 +59,8 @@ def draw_right_handed_frame(rotation=Rotation.identity(), length=2.5):
 
     ax.set_axis_off()
 
-    ax.set_title("Right-Handed Coordinate Frame")
+    ax.set_title(label)
     ax.legend()
 
     plt.show()
-    return Rotation(change_of_basis.T @ frame)
+    return Rotation(sympy.Matrix(frame))
