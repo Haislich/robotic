@@ -77,13 +77,7 @@ class Rotation(sympy.Matrix):
 
     def __new__(
         cls,
-        mat: sympy.Matrix = sympy.Matrix(
-            [
-                [1, 0, 0],
-                [0, 1, 0],
-                [0, 0, 1],
-            ]
-        ),
+        mat: sympy.Matrix,
     ):
         # epsilon = 1e-10
         # if mat.shape[0] != mat.shape[1]:
@@ -107,6 +101,18 @@ class Rotation(sympy.Matrix):
             for col in range(self.cols):
                 mat[row, col] = round(mat[row, col], digits)  # type: ignore
         return Rotation(mat)
+
+    @staticmethod
+    def identity() -> "Rotation":
+        return Rotation(
+            sympy.Matrix(
+                [
+                    [1, 0, 0],
+                    [0, 1, 0],
+                    [0, 0, 1],
+                ]
+            )
+        )
 
     @staticmethod
     def from_axis_angle(
@@ -381,6 +387,13 @@ class HomogeneousTransformation(sympy.Matrix):
     def identity() -> "HomogeneousTransformation":
         return HomogeneousTransformation(sympy.eye(4))
 
+    def round(self, digits=4) -> "HomogeneousTransformation":
+        mat = self
+        for row in range(self.rows):
+            for col in range(self.cols):
+                mat[row, col] = round(mat[row, col], digits)  # type: ignore
+        return HomogeneousTransformation(mat)
+
     @staticmethod
     def from_rotation(rotation: Rotation) -> "HomogeneousTransformation":
         top = rotation.row_join(Translation())
@@ -409,7 +422,7 @@ class HomogeneousTransformation(sympy.Matrix):
 
     @staticmethod
     def from_translation(translation: Translation) -> "HomogeneousTransformation":
-        top = Rotation().row_join(translation)
+        top = Rotation.identity().row_join(translation)
 
         # Build bottom row: [0 0 0 1]
         bottom = sympy.Matrix([[0, 0, 0, 1]])

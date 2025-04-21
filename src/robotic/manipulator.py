@@ -25,33 +25,40 @@ class Manipulator:
 
     def __init__(
         self,
-        link_lenghts: List[float | sympy.Expr],
+        link_lengths: List[float | sympy.Expr],
         link_twists: List[float | sympy.Expr],
         joint_types: List[JointType],
-    ) -> None:
-        self.link_lenghts = link_lenghts
+        theta_offsets: Optional[List[float | sympy.Expr]] = None,
+        d_offsets: Optional[List[float | sympy.Expr]] = None,
+    ):
+        self.link_lengths = link_lengths
         self.link_twists = link_twists
         self.joint_types = joint_types
-        self.joints = [
-            sympy.symbols(
-                f"theta_{i}" if joint_type == JointType.REVOLUTE else f"d_{i}"
-            )
-            for i, joint_type in enumerate(joint_types)
-        ]
+        n = len(joint_types)
 
-    @property
+        self.theta_offsets = theta_offsets or [0] * n
+        self.d_offsets = d_offsets or [0] * n
+
+        self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(n)]
+
+    # @property
     def dh_table(self) -> pd.DataFrame:
         if self._dh_table is None:
             rows = []
             for i, joint_type in enumerate(self.joint_types):
-                a = self.link_lenghts[i]
+                a = self.link_lengths[i]
                 alpha = self.link_twists[i]
+                q_i = self.joints[i]
+                theta_offset = self.theta_offsets[i]
+                d_offset = self.d_offsets[i]
+
                 if joint_type == JointType.REVOLUTE:
-                    theta = sympy.symbols(f"q_{i + 1}")
-                    d = 0
+                    theta = q_i + theta_offset
+                    d = d_offset
                 else:
-                    d = sympy.symbols(f"q_{i + 1}")
-                    theta = 0
+                    theta = theta_offset
+                    d = q_i + d_offset
+
                 rows.append((a, alpha, d, theta, joint_type.name))
             self._dh_table = pd.DataFrame(
                 rows, columns=["a", "alpha", "d", "theta", "type"]
@@ -60,41 +67,37 @@ class Manipulator:
 
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
         T = HomogeneousTransformation.identity()
-        for _, row in self.dh_table.iterrows():
+        for _, row in self.dh_table().iterrows():
             T = T @ (
                 HomogeneousTransformation.from_rotation(
                     Rotation.from_axis_angle(Z, row.theta)
                 )
-                @ HomogeneousTransformation.from_translation(
-                    Translation(sympy.Matrix([0, 0, row.d]))
-                )
-                @ HomogeneousTransformation.from_translation(
-                    Translation(sympy.Matrix([row.a, 0, 0]))
-                )
+                @ HomogeneousTransformation.from_translation(Translation(0, 0, row.d))
+                @ HomogeneousTransformation.from_translation(Translation(row.a, 0, 0))
                 @ HomogeneousTransformation.from_rotation(
                     Rotation.from_axis_angle(X, row.alpha)
                 )
             )
         if simplify:
-            T = sympy.simplify(T)
+            T = HomogeneousTransformation(sympy.simplify(T))
         return T
 
 
-link_lenghts = [sympy.symbols("a_1"), sympy.symbols("a_2"), 0, 0]
-link_twists = [0, 0, 0, sympy.pi]
-joint_types = [
-    JointType.REVOLUTE,
-    JointType.REVOLUTE,
-    JointType.PRISMATIC,
-    JointType.REVOLUTE,
-]
+# link_lenghts = [sympy.symbols("a_1"), sympy.symbols("a_2"), 0, 0]
+# link_twists = [0, 0, 0, sympy.pi]
+# joint_types = [
+#     JointType.REVOLUTE,
+#     JointType.REVOLUTE,
+#     JointType.PRISMATIC,
+#     JointType.REVOLUTE,
+# ]
 
-man = Manipulator(
-    link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
-).dh_table
+# man = Manipulator(
+#     link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
+# ).dh_table
 
 
-mat = Manipulator(
-    link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
-).dh_matrix
-print(mat)
+# mat = Manipulator(
+#     link_lenghts=link_lenghts, link_twists=link_twists, joint_types=joint_types
+# ).dh_matrix
+# print(mat)
