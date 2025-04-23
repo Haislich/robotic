@@ -1,7 +1,9 @@
 # %%
 from enum import Enum, auto
-from typing import List, Optional
+from typing import Dict, List, Optional, Sequence
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import sympy
 
@@ -12,6 +14,8 @@ from robotic.transformations import (
     X,
     Z,
 )
+
+MathValue = int | float | sympy.Expr
 
 
 class DHTable(pd.DataFrame):
@@ -81,34 +85,38 @@ class JointType(Enum):
 class Manipulator:
     _dh_table: Optional[DHTable] = None
     _dh_matrix: Optional[HomogeneousTransformation] = None
+    frames: Optional[Sequence[HomogeneousTransformation]] = None
 
     def __init__(
         self,
-        link_lengths: List[float | sympy.Expr],
-        link_twists: List[float | sympy.Expr],
-        joint_types: List[JointType],
-        theta_offsets: Optional[List[float | sympy.Expr]] = None,
-        d_offsets: Optional[List[float | sympy.Expr]] = None,
+        x_offsets: Sequence[MathValue],
+        x_rotations: Sequence[MathValue],
+        joint_types: Sequence[JointType],
+        *,
+        z_rotations: Optional[Sequence[MathValue]] = None,
+        z_offsets: Optional[Sequence[MathValue]] = None,
+        link_dimensions: Optional[Sequence[MathValue]] = None,
     ):
-        self.link_lengths = link_lengths
-        self.link_twists = link_twists
+        self.x_offsets = x_offsets
+        self.x_rotations = x_rotations
         self.joint_types = joint_types
         n = len(joint_types)
 
-        self.theta_offsets = theta_offsets or [0] * n
-        self.d_offsets = d_offsets or [0] * n
+        self.z_rotations = z_rotations or [0] * n
+        self.z_offsets = z_offsets or [0] * n
 
         self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(n)]
+        self.link_dimensions = link_dimensions or [1.0] * n
 
     def dh_table(self) -> DHTable:
         if self._dh_table is None:
             rows = []
             for i, joint_type in enumerate(self.joint_types):
-                a = self.link_lengths[i]
-                alpha = self.link_twists[i]
+                a = self.x_offsets[i]
+                alpha = self.x_rotations[i]
                 q_i = self.joints[i]
-                theta_offset = self.theta_offsets[i]
-                d_offset = self.d_offsets[i]
+                theta_offset = self.z_rotations[i]
+                d_offset = self.z_offsets[i]
 
                 if joint_type == JointType.REVOLUTE:
                     theta = q_i + theta_offset
@@ -123,6 +131,7 @@ class Manipulator:
 
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
         T = HomogeneousTransformation.identity()
+        self.frames = [T]
         for _, row in self.dh_table().iterrows():
             T = T @ (
                 HomogeneousTransformation.from_rotation(
@@ -136,24 +145,143 @@ class Manipulator:
             )
         if simplify:
             T = HomogeneousTransformation(sympy.simplify(T))
+        self.frames.append(T)
         return T
+
+    def plot_planar(
+        self, joint_values: Sequence[MathValue], symbol_values: Optional[Dict] = None
+    ):
+        raise NotImplementedError("The implementation is still a WIP")
+        subs = {q: val for q, val in zip(self.joints, joint_values)}
+        if symbol_values:
+            subs.update(symbol_values)
+
+        x, y = 0.0, 0.0
+        theta = 0.0
+        points = [(x, y)]
+
+        for i in range(len(self.joint_types)):
+            joint_type = self.joint_types[i]
+            q_i = self.joints[i]
+            q_val = float(sympy.N(q_i.subs(subs)))
+
+            if joint_type == JointType.REVOLUTE:
+                theta += q_val
+                dx = self.link_dimensions[i] * np.cos(theta)
+                dy = self.link_dimensions[i] * np.sin(theta)
+            elif joint_type == JointType.PRISMATIC:
+                dx = (self.link_dimensions[i] + q_val) * np.cos(theta)  # type: ignore
+                dy = (self.link_dimensions[i] + q_val) * np.sin(theta)  # type: ignore
+            else:
+                raise ValueError(f"Unknown joint type: {joint_type}")
+
+            x += dx
+            y += dy
+            points.append((x, y))
+
+        xs, ys = zip(*points)
+
+        # Plot setup
+        fig, ax = plt.subplots()
+        ax.plot(xs, ys, color="black", linewidth=2, zorder=1)
+        # Joint visualization
+        r, p = True, True
+        for i, (x, y) in enumerate(points[:-1]):
+            jt = self.joint_types[i]
+
+            if jt == JointType.REVOLUTE:
+                ax.scatter(
+                    x, y, color="red", s=30, marker="o", label="Revolute" if r else ""
+                )
+                r = False
+            elif jt == JointType.PRISMATIC:
+                ax.scatter(
+                    x,
+                    y,
+                    color="green",
+                    s=30,
+                    marker="s",
+                    label="Prismatic" if p else "",
+                )
+                p = False
+
+            # if self.frames is not None:
+            #     # Frame i gives orientation at this joint
+            #     T = self.frames[i].evalf(subs=subs)
+            #     x_axis = np.array(T[:2, 0], dtype=float)
+            #     y_axis = np.array(T[:2, 1], dtype=float)
+            #     # Draw local frame axes (quivers)
+            #     ax.quiver(
+            #         x,
+            #         y,
+            #         x_axis[0],
+            #         x_axis[1],
+            #         color="red",
+            #         scale=1 / axis_length,
+            #         scale_units="xy",
+            #         angles="xy",
+            #         width=0.01,
+            #         headwidth=1,
+            #         zorder=2,
+            #     )
+            #     ax.quiver(
+            #         x,
+            #         y,
+            #         y_axis[0],
+            #         y_axis[1],
+            #         color="green",
+            #         scale=1 / axis_length,
+            #         scale_units="xy",
+            #         angles="xy",
+            #         width=0.01,
+            #         zorder=2,
+            #     )
+
+        # End-effector point (optional: make it distinct)
+        ax.scatter(
+            xs[-1], ys[-1], color="blue", s=100, marker="*", label="End-effector"
+        )
+
+        # Axes and styling
+        max_range = max(max(map(abs, xs)), max(map(abs, ys))) + 0.5
+        ax.axhline(0, color="black", linewidth=0.8, zorder=0)
+        ax.axvline(0, color="black", linewidth=0.8, zorder=0)
+        ax.set_aspect("equal")
+        ax.set_xlim(-max_range, max_range)
+        ax.set_ylim(-max_range, max_range)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_facecolor("white")
+        fig.patch.set_facecolor("white")
+        for side in ["top", "right", "bottom", "left"]:
+            ax.spines[side].set_visible(False)
+
+        # Legend
+        ax.legend(loc="upper left", frameon=False)
+        ax.set_title("Planar Manipulator (XY view)")
+        plt.show()
 
 
 # joint_types = [
-#     JointType.PRISMATIC,
-#     JointType.PRISMATIC,
 #     JointType.REVOLUTE,
+#     JointType.PRISMATIC,
+#     # JointType.REVOLUTE,
+#     # JointType.REVOLUTE,
+#     # JointType.REVOLUTE,
+#     # JointType.REVOLUTE,
+#     # JointType.REVOLUTE,
 # ]
-# # a
-# link_lengths = [0, 0, sympy.symbols("L")]
-# # alpha
-# link_twists = [-sympy.pi / 2, -sympy.pi / 2, 0]
+# x_offsets = [0, 0, 0, 0, 0, 0, 0]
+# x_rotations = [0, 0, 0, 0, 0, 0, 0]
 # man = Manipulator(
-#     link_lengths=link_lengths,
-#     link_twists=link_twists,
+#     x_offsets=x_offsets,
+#     x_rotations=x_rotations,
 #     joint_types=joint_types,
-#     theta_offsets=[0.0, -sympy.pi / 2, 0],
 # )
 # man.dh_table()
+# man.dh_matrix()
 
-# %%
+# man.plot_planar(
+#     [sympy.pi / 2, 4, 0, 0, 0, 0, sympy.pi / 2],
+#     {"L": 1.0},
+# )
