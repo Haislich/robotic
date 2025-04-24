@@ -37,8 +37,14 @@ Z = Axis(0, 0, 1)
 
 
 class EulerOrder(enum.Enum):
-    MOVING = enum.auto()
-    FIXED = enum.auto()
+    MOVING = "MOVING"
+    FIXED = "FIXED"
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class EulerSequence(enum.Enum):
@@ -58,11 +64,18 @@ class EulerSequence(enum.Enum):
     ZYZ = "ZYZ"
     YXY = "YXY"
 
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return self.value
+
 
 EulerAngles = (
     Tuple[sympy.Expr | float, sympy.Expr | float, sympy.Expr | float]
     | List[sympy.Expr | float]
 )
+
 EulerSpec = Tuple[
     EulerAngles,
     EulerSequence,
@@ -75,23 +88,12 @@ class Rotation(sympy.Matrix):
     _axis_angle_spec: Optional[AxisAngleSpec] = None
     _euler_spec: Optional[EulerSpec] = None
 
-    def __new__(
-        cls,
-        mat: sympy.Matrix,
-    ):
-        # epsilon = 1e-10
+    def __new__(cls, mat: sympy.Matrix, *, tollerance=1e-4):
         # if mat.shape[0] != mat.shape[1]:
         #     raise ValueError("A rotation matrix is a square matrix")
-        # if not sympy.simplify(mat.det().evalf() - 1) < epsilon:
-        #     print(mat.det())
+        # if not abs(sympy.simplify((mat.det())) - 1) < tollerance:
         #     raise ValueError("A rotation matrix has determinant +1")
-
-        # if not all(abs(sympy.simplify(mat.T * mat - sympy.eye(3)))) < epsilon:
-        #     print(f"{mat=}")
-        #     print(f"{mat.T=}")
-        #     print(f"{mat * mat.T =}")
-        #     print(sympy.simplify(mat.T * mat - sympy.eye(3)))
-
+        # if not all(abs(sympy.simplify(mat.T * mat - sympy.eye(3)))) < tollerance:
         #     raise ValueError(r"A rotation matrix is such that $R^T = R^{-1}$")
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
@@ -203,78 +205,146 @@ class Rotation(sympy.Matrix):
         order: EulerOrder = EulerOrder.MOVING,
     ) -> EulerSpec:
         self = cast(Any, self)  # Trust me bro
-        if self._euler_spec is not None:
-            return self._euler_spec
-        THETAS = {
-            EulerSequence.XYZ = 
-        }
-        match (sequence, order):
-            # FIXED Tait-Bryan
-            case EulerSequence.XYZ, EulerOrder.FIXED:
-                theta2 = sympy.asin(self[0, 2])
-                theta1 = sympy.atan2(-self[1, 2], self[2, 2])
-                theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.XZY, EulerOrder.FIXED:
-                theta2 = -sympy.asin(self[0, 1])
-                theta1 = sympy.atan2(self[2, 1], self[1, 1])
-                theta3 = sympy.atan2(self[0, 2], self[0, 0])
+        if self._euler_spec is None:
+            match sequence:
+                # FIXED Tait-Bryan
+                case EulerSequence.XYZ:
+                    theta2 = sympy.asin(self[0, 2])
+                    theta1 = sympy.atan2(-self[1, 2], self[2, 2])
+                    theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.XZY:
+                    theta2 = -sympy.asin(self[0, 1])
+                    theta1 = sympy.atan2(self[2, 1], self[1, 1])
+                    theta3 = sympy.atan2(self[0, 2], self[0, 0])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.YXZ:
+                    theta2 = sympy.asin(self[0, 2])
+                    theta1 = sympy.atan2(-self[1, 2], self[2, 2])
+                    theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.YZX:
+                    theta2 = sympy.asin(self[1, 0])
+                    theta1 = sympy.atan2(-self[2, 0], self[0, 0])
+                    theta3 = sympy.atan2(-self[1, 2], self[1, 1])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.ZXY:
+                    theta2 = sympy.asin(self[2, 1])
+                    theta1 = sympy.atan2(-self[0, 1], self[1, 1])
+                    theta3 = sympy.atan2(-self[2, 0], self[2, 2])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.ZYX:
+                    theta2 = -sympy.asin(self[2, 0])
+                    theta1 = sympy.atan2(self[1, 0], self[0, 0])
+                    theta3 = sympy.atan2(self[2, 1], self[2, 2])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
 
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.YXZ, EulerOrder.FIXED:
-                theta2 = sympy.asin(self[0, 2])
-                theta1 = sympy.atan2(-self[1, 2], self[2, 2])
-                theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.YZX, EulerOrder.FIXED:
-                theta2 = sympy.asin(self[1, 0])
-                theta1 = sympy.atan2(-self[2, 0], self[0, 0])
-                theta3 = sympy.atan2(-self[1, 2], self[1, 1])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.ZXY, EulerOrder.FIXED:
-                theta2 = sympy.asin(self[2, 1])
-                theta1 = sympy.atan2(-self[0, 1], self[1, 1])
-                theta3 = sympy.atan2(-self[2, 0], self[2, 2])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.ZYX, EulerOrder.FIXED:
-                theta2 = -sympy.asin(self[2, 0])
-                theta1 = sympy.atan2(self[1, 0], self[0, 0])
-                theta3 = sympy.atan2(self[2, 1], self[2, 2])
-                return (theta1, theta2, theta3), sequence, order
-
-            # FIXED: Proper Euler Angles
-            case EulerSequence.ZXZ, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[2, 2])
-                theta1 = sympy.atan2(self[0, 2], self[1, 2])
-                theta3 = sympy.atan2(self[2, 0], -self[2, 1])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.XYX, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[0, 0])
-                theta1 = sympy.atan2(self[1, 0], -self[2, 0])
-                theta3 = sympy.atan2(self[0, 1], self[0, 2])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.YZY, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[1, 1])
-                theta1 = sympy.atan2(self[2, 1], -self[0, 1])
-                theta3 = sympy.atan2(self[1, 2], self[1, 0])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.XZX, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[0, 0])
-                theta1 = sympy.atan2(self[2, 0], self[1, 0])
-                theta3 = sympy.atan2(self[0, 2], -self[0, 1])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.ZYZ, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[2, 2])
-                theta1 = sympy.atan2(self[1, 2], -self[0, 2])
-                theta3 = sympy.atan2(self[2, 1], self[2, 0])
-                return (theta1, theta2, theta3), sequence, order
-            case EulerSequence.YXY, EulerOrder.FIXED:
-                theta2 = sympy.acos(self[1, 1])
-                theta1 = sympy.atan2(self[0, 1], self[2, 1])
-                theta3 = sympy.atan2(self[1, 0], -self[1, 2])
-                return (theta1, theta2, theta3), sequence, order
-            case _:
-                raise NotImplementedError
+                # FIXED: Proper Euler Angles
+                case EulerSequence.ZXZ:
+                    theta2 = sympy.acos(self[2, 2])
+                    theta1 = sympy.atan2(self[0, 2], self[1, 2])
+                    theta3 = sympy.atan2(self[2, 0], -self[2, 1])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.XYX:
+                    theta2 = sympy.acos(self[0, 0])
+                    theta1 = sympy.atan2(self[1, 0], -self[2, 0])
+                    theta3 = sympy.atan2(self[0, 1], self[0, 2])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.YZY:
+                    theta2 = sympy.acos(self[1, 1])
+                    theta1 = sympy.atan2(self[2, 1], -self[0, 1])
+                    theta3 = sympy.atan2(self[1, 2], self[1, 0])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.XZX:
+                    theta2 = sympy.acos(self[0, 0])
+                    theta1 = sympy.atan2(self[2, 0], self[1, 0])
+                    theta3 = sympy.atan2(self[0, 2], -self[0, 1])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.ZYZ:
+                    theta2 = sympy.acos(self[2, 2])
+                    theta1 = sympy.atan2(self[1, 2], -self[0, 2])
+                    theta3 = sympy.atan2(self[2, 1], self[2, 0])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case EulerSequence.YXY:
+                    theta2 = sympy.acos(self[1, 1])
+                    theta1 = sympy.atan2(self[0, 1], self[2, 1])
+                    theta3 = sympy.atan2(self[1, 0], -self[1, 2])
+                    self._euler_spec = (
+                        (theta1, theta2, theta3)
+                        if EulerOrder.FIXED
+                        else (theta3, theta2, theta1),
+                        sequence,
+                        order,
+                    )
+                case _:
+                    raise NotImplementedError
+        return self._euler_spec
 
     @staticmethod
     def is_rotation(obj) -> TypeGuard["Rotation"]:
