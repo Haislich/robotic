@@ -15,7 +15,7 @@ from robotic.transformations import (
     Z,
 )
 
-MathValue = int | float | sympy.Expr
+MathValue = type[int | float | sympy.Expr]
 
 
 class DHTable(pd.DataFrame):
@@ -89,19 +89,19 @@ class Manipulator:
 
     def __init__(
         self,
-        x_offsets: Sequence[MathValue],
-        x_rotations: Sequence[MathValue],
         joint_types: Sequence[JointType],
         *,
+        x_offsets: Optional[Sequence[MathValue]] = None,
+        x_rotations: Optional[Sequence[MathValue]] = None,
         z_rotations: Optional[Sequence[MathValue]] = None,
         z_offsets: Optional[Sequence[MathValue]] = None,
         link_dimensions: Optional[Sequence[MathValue]] = None,
     ):
-        self.x_offsets = x_offsets
-        self.x_rotations = x_rotations
         self.joint_types = joint_types
         n = len(joint_types)
 
+        self.x_offsets = x_offsets or [0] * n
+        self.x_rotations = x_rotations or [0] * n
         self.z_rotations = z_rotations or [0] * n
         self.z_offsets = z_offsets or [0] * n
 

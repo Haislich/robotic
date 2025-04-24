@@ -135,7 +135,7 @@ class Rotation(sympy.Matrix):
                 + (self[0, 2] - self[2, 0]) ** 2
                 + (self[1, 2] - self[2, 1]) ** 2
             ),
-            (self[0, 0] + self[1, 1] + self[2, 2]),
+            (self[0, 0] + self[1, 1] + self[2, 2]) - 1,
         )
         sin_theta = sympy.sin(theta)
 
@@ -205,72 +205,74 @@ class Rotation(sympy.Matrix):
         self = cast(Any, self)  # Trust me bro
         if self._euler_spec is not None:
             return self._euler_spec
-
+        THETAS = {
+            EulerSequence.XYZ = 
+        }
         match (sequence, order):
             # FIXED Tait-Bryan
             case EulerSequence.XYZ, EulerOrder.FIXED:
                 theta2 = sympy.asin(self[0, 2])
                 theta1 = sympy.atan2(-self[1, 2], self[2, 2])
                 theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.XZY, EulerOrder.FIXED:
                 theta2 = -sympy.asin(self[0, 1])
                 theta1 = sympy.atan2(self[2, 1], self[1, 1])
                 theta3 = sympy.atan2(self[0, 2], self[0, 0])
 
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.YXZ, EulerOrder.FIXED:
                 theta2 = sympy.asin(self[0, 2])
                 theta1 = sympy.atan2(-self[1, 2], self[2, 2])
                 theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.YZX, EulerOrder.FIXED:
                 theta2 = sympy.asin(self[1, 0])
                 theta1 = sympy.atan2(-self[2, 0], self[0, 0])
                 theta3 = sympy.atan2(-self[1, 2], self[1, 1])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.ZXY, EulerOrder.FIXED:
                 theta2 = sympy.asin(self[2, 1])
                 theta1 = sympy.atan2(-self[0, 1], self[1, 1])
                 theta3 = sympy.atan2(-self[2, 0], self[2, 2])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.ZYX, EulerOrder.FIXED:
                 theta2 = -sympy.asin(self[2, 0])
                 theta1 = sympy.atan2(self[1, 0], self[0, 0])
                 theta3 = sympy.atan2(self[2, 1], self[2, 2])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
 
             # FIXED: Proper Euler Angles
             case EulerSequence.ZXZ, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[2, 2])
                 theta1 = sympy.atan2(self[0, 2], self[1, 2])
                 theta3 = sympy.atan2(self[2, 0], -self[2, 1])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.XYX, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[0, 0])
                 theta1 = sympy.atan2(self[1, 0], -self[2, 0])
                 theta3 = sympy.atan2(self[0, 1], self[0, 2])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.YZY, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[1, 1])
                 theta1 = sympy.atan2(self[2, 1], -self[0, 1])
                 theta3 = sympy.atan2(self[1, 2], self[1, 0])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.XZX, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[0, 0])
                 theta1 = sympy.atan2(self[2, 0], self[1, 0])
                 theta3 = sympy.atan2(self[0, 2], -self[0, 1])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.ZYZ, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[2, 2])
                 theta1 = sympy.atan2(self[1, 2], -self[0, 2])
                 theta3 = sympy.atan2(self[2, 1], self[2, 0])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case EulerSequence.YXY, EulerOrder.FIXED:
                 theta2 = sympy.acos(self[1, 1])
                 theta1 = sympy.atan2(self[0, 1], self[2, 1])
                 theta3 = sympy.atan2(self[1, 0], -self[1, 2])
-                return (theta3, theta2, theta1), sequence, order
+                return (theta1, theta2, theta3), sequence, order
             case _:
                 raise NotImplementedError
 
