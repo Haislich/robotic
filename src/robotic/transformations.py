@@ -1,6 +1,6 @@
 import enum
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, TypeGuard, cast, overload
+from typing import Any, Optional, TypeGuard, cast, overload
 
 import sympy
 

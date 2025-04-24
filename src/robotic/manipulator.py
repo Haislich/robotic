@@ -8,6 +8,8 @@ import pandas as pd
 import sympy
 
 from robotic.transformations import (
+    EulerOrder,
+    EulerSequence,
     HomogeneousTransformation,
     Rotation,
     Translation,
@@ -15,8 +17,6 @@ from robotic.transformations import (
     Z,
 )
 from robotic.typing import Scalar
-
-#
 
 
 class DHTable(pd.DataFrame):
@@ -87,27 +87,92 @@ class Manipulator:
     _dh_table: Optional[DHTable] = None
     _dh_matrix: Optional[HomogeneousTransformation] = None
     frames: Optional[Sequence[HomogeneousTransformation]] = None
+    n: int
 
     def __init__(
         self,
         joint_types: Sequence[JointType],
+        x_rotations: Sequence[Scalar],
+        x_offsets: Sequence[Scalar],
+        z_rotations: Sequence[Scalar],
+        z_offsets: Sequence[Scalar],
         *,
-        x_offsets: Optional[Sequence[Scalar]] = None,
-        x_rotations: Optional[Sequence[Scalar]] = None,
-        z_rotations: Optional[Sequence[Scalar]] = None,
-        z_offsets: Optional[Sequence[Scalar]] = None,
         link_dimensions: Optional[Sequence[Scalar]] = None,
     ):
         self.joint_types = joint_types
-        n = len(joint_types)
+        self.n = len(joint_types)
+        if len(x_rotations) < self.n:
+            raise ValueError("...")
+        self.x_rotations = x_rotations
+        if len(x_offsets) < self.n:
+            raise ValueError("...")
+        self.x_offsets = x_offsets
+        if len(z_rotations) < self.n:
+            raise ValueError("...")
+        self.z_rotations = z_rotations
+        if len(z_offsets) < self.n:
+            raise ValueError("...")
+        self.z_offsets = z_offsets
 
-        self.x_offsets = x_offsets or [0] * n
-        self.x_rotations = x_rotations or [0] * n
-        self.z_rotations = z_rotations or [0] * n
-        self.z_offsets = z_offsets or [0] * n
+        self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(self.n)]
+        self.link_dimensions = link_dimensions or [1.0] * self.n
 
-        self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(n)]
-        self.link_dimensions = link_dimensions or [1.0] * n
+    @staticmethod
+    def from_rotations(
+        joint_types: Sequence[JointType], rotations: Sequence[Rotation]
+    ) -> "Manipulator":
+        sequence = EulerSequence.XYZ
+        order = EulerOrder.FIXED
+        x_rotations = [
+            rotation.to_euler(sequence, order).euler_angles.theta1
+            for rotation in rotations
+        ]
+        z_rotations = [
+            rotation.to_euler(sequence, order).euler_angles.theta3
+            for rotation in rotations
+        ]
+
+        return Manipulator(
+            joint_types=joint_types,
+            x_rotations=x_rotations,
+            x_offsets=[0] * len(joint_types),
+            z_rotations=z_rotations,
+            z_offsets=[0] * len(joint_types),
+        )
+
+    def with_translational_offset(
+        self,
+        x_offsets: Optional[Sequence[Scalar]] = None,
+        z_offsets: Optional[Sequence[Scalar]] = None,
+    ) -> "Manipulator":
+        if x_offsets is None:
+            x_offsets = self.x_offsets
+        if z_offsets is None:
+            z_offsets = self.z_offsets
+        return Manipulator(
+            joint_types=self.joint_types,
+            x_rotations=self.x_rotations,
+            x_offsets=x_offsets,
+            z_rotations=self.z_rotations,
+            z_offsets=z_offsets,
+        )
+
+    def with_rotations(
+        self,
+        x_rotations: Optional[Sequence[Scalar]] = None,
+        z_rotations: Optional[Sequence[Scalar]] = None,
+    ) -> "Manipulator":
+        if x_rotations is None:
+            x_rotations = self.x_rotations
+        if z_rotations is None:
+            z_rotations = self.z_rotations
+        return Manipulator(
+            joint_types=self.joint_types,
+            x_rotations=x_rotations,
+            x_offsets=self.x_offsets,
+            z_rotations=z_rotations,
+            z_offsets=self.z_offsets,
+        )
 
     def dh_table(self) -> DHTable:
         if self._dh_table is None:
