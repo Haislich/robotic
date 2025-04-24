@@ -1,6 +1,6 @@
 # %%
 from enum import Enum, auto
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,8 +14,9 @@ from robotic.transformations import (
     X,
     Z,
 )
+from robotic.typing import Scalar
 
-MathValue = type[int | float | sympy.Expr]
+#
 
 
 class DHTable(pd.DataFrame):
@@ -91,11 +92,11 @@ class Manipulator:
         self,
         joint_types: Sequence[JointType],
         *,
-        x_offsets: Optional[Sequence[MathValue]] = None,
-        x_rotations: Optional[Sequence[MathValue]] = None,
-        z_rotations: Optional[Sequence[MathValue]] = None,
-        z_offsets: Optional[Sequence[MathValue]] = None,
-        link_dimensions: Optional[Sequence[MathValue]] = None,
+        x_offsets: Optional[Sequence[Scalar]] = None,
+        x_rotations: Optional[Sequence[Scalar]] = None,
+        z_rotations: Optional[Sequence[Scalar]] = None,
+        z_offsets: Optional[Sequence[Scalar]] = None,
+        link_dimensions: Optional[Sequence[Scalar]] = None,
     ):
         self.joint_types = joint_types
         n = len(joint_types)
@@ -149,7 +150,7 @@ class Manipulator:
         return T
 
     def plot_planar(
-        self, joint_values: Sequence[MathValue], symbol_values: Optional[Dict] = None
+        self, joint_values: Sequence[Scalar], symbol_values: Optional[Dict] = None
     ):
         raise NotImplementedError("The implementation is still a WIP")
         subs = {q: val for q, val in zip(self.joints, joint_values)}

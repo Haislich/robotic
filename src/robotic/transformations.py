@@ -1,15 +1,18 @@
 import enum
+from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, TypeGuard, cast, overload
 
 import sympy
+
+from robotic.typing import Scalar
 
 
 class Axis(sympy.Matrix):
     def __new__(
         cls,
-        x1: float | sympy.Float | sympy.Expr,
-        x2: float | sympy.Float | sympy.Expr,
-        x3: float | sympy.Float | sympy.Expr,
+        x1: Scalar,
+        x2: Scalar,
+        x3: Scalar,
     ):
         obj = sympy.Matrix.__new__(cls, 3, 1, [x1, x2, x3])
         return obj
@@ -36,15 +39,21 @@ Y = Axis(0, 1, 0)
 Z = Axis(0, 0, 1)
 
 
-class EulerOrder(enum.Enum):
-    MOVING = "MOVING"
-    FIXED = "FIXED"
+@dataclass
+class AxisAngleSpec:
+    axis: Axis
+    theta: Scalar
 
-    def __repr__(self) -> str:
-        return str(self)
 
-    def __str__(self) -> str:
-        return self.value
+@dataclass
+class EulerAngles:
+    theta1: Scalar
+    theta2: Scalar
+    theta3: Scalar
+
+    @property
+    def T(self) -> "EulerAngles":
+        return EulerAngles(self.theta3, self.theta2, self.theta1)
 
 
 class EulerSequence(enum.Enum):
@@ -71,17 +80,22 @@ class EulerSequence(enum.Enum):
         return self.value
 
 
-EulerAngles = (
-    Tuple[sympy.Expr | float, sympy.Expr | float, sympy.Expr | float]
-    | List[sympy.Expr | float]
-)
+class EulerOrder(enum.Enum):
+    MOVING = "MOVING"
+    FIXED = "FIXED"
 
-EulerSpec = Tuple[
-    EulerAngles,
-    EulerSequence,
-    EulerOrder,
-]
-AxisAngleSpec = Tuple[Axis, sympy.Expr | float]
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class EulerSpec:
+    euler_angles: EulerAngles
+    euler_sequence: EulerSequence
+    euler_order: EulerOrder
 
 
 class Rotation(sympy.Matrix):
@@ -98,11 +112,10 @@ class Rotation(sympy.Matrix):
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
     def round(self, digits=4) -> "Rotation":
-        mat = self
         for row in range(self.rows):
             for col in range(self.cols):
-                mat[row, col] = round(mat[row, col], digits)  # type: ignore
-        return Rotation(mat)
+                self[row, col] = round(self[row, col], digits)  # type: ignore
+        return Rotation(self)
 
     @staticmethod
     def identity() -> "Rotation":
@@ -117,9 +130,7 @@ class Rotation(sympy.Matrix):
         )
 
     @staticmethod
-    def from_axis_angle(
-        r: Axis = Axis(0, 0, 0), theta: sympy.Expr | float = 0.0
-    ) -> "Rotation":
+    def from_axis_angle(r: Axis = Axis(0, 0, 0), theta: Scalar = 0.0) -> "Rotation":
         identity = sympy.eye(3)
         skew = sympy.Matrix(r.skew())
         twist = skew * sympy.sin(theta)
@@ -172,7 +183,7 @@ class Rotation(sympy.Matrix):
                 (regular_axis[2], True),
             ),
         )
-        self._axis_angle_spec = (axis, theta)
+        self._axis_angle_spec = AxisAngleSpec(axis, theta)
         return self._axis_angle_spec
 
     @staticmethod
@@ -181,8 +192,7 @@ class Rotation(sympy.Matrix):
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
     ) -> "Rotation":
-        alpha, beta, gamma = angles
-        angle_map = [alpha, beta, gamma]
+        angle_map = [angles.theta1, angles.theta2, angles.theta3]
         axis_map = {"X": X, "Y": Y, "Z": Z}
 
         axes = [axis_map[c] for c in sequence.value]
@@ -196,7 +206,7 @@ class Rotation(sympy.Matrix):
         else:
             mat = R1 @ R2 @ R3  # body frame
 
-        mat._euler_spec = (angles, sequence, order)
+        mat._euler_spec = EulerSpec(angles, sequence, order)
         return mat
 
     def to_euler(
@@ -205,6 +215,7 @@ class Rotation(sympy.Matrix):
         order: EulerOrder = EulerOrder.MOVING,
     ) -> EulerSpec:
         self = cast(Any, self)  # Trust me bro
+        euler_angles = EulerAngles(0, 0, 0)
         if self._euler_spec is None:
             match sequence:
                 # FIXED Tait-Bryan
@@ -212,138 +223,74 @@ class Rotation(sympy.Matrix):
                     theta2 = sympy.asin(self[0, 2])
                     theta1 = sympy.atan2(-self[1, 2], self[2, 2])
                     theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XZY:
                     theta2 = -sympy.asin(self[0, 1])
                     theta1 = sympy.atan2(self[2, 1], self[1, 1])
                     theta3 = sympy.atan2(self[0, 2], self[0, 0])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YXZ:
                     theta2 = sympy.asin(self[0, 2])
                     theta1 = sympy.atan2(-self[1, 2], self[2, 2])
                     theta3 = sympy.atan2(-self[0, 1], self[0, 0])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YZX:
                     theta2 = sympy.asin(self[1, 0])
                     theta1 = sympy.atan2(-self[2, 0], self[0, 0])
                     theta3 = sympy.atan2(-self[1, 2], self[1, 1])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZXY:
                     theta2 = sympy.asin(self[2, 1])
                     theta1 = sympy.atan2(-self[0, 1], self[1, 1])
                     theta3 = sympy.atan2(-self[2, 0], self[2, 2])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZYX:
                     theta2 = -sympy.asin(self[2, 0])
                     theta1 = sympy.atan2(self[1, 0], self[0, 0])
                     theta3 = sympy.atan2(self[2, 1], self[2, 2])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
 
                 # FIXED: Proper Euler Angles
                 case EulerSequence.ZXZ:
                     theta2 = sympy.acos(self[2, 2])
                     theta1 = sympy.atan2(self[0, 2], self[1, 2])
                     theta3 = sympy.atan2(self[2, 0], -self[2, 1])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XYX:
                     theta2 = sympy.acos(self[0, 0])
                     theta1 = sympy.atan2(self[1, 0], -self[2, 0])
                     theta3 = sympy.atan2(self[0, 1], self[0, 2])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YZY:
                     theta2 = sympy.acos(self[1, 1])
                     theta1 = sympy.atan2(self[2, 1], -self[0, 1])
                     theta3 = sympy.atan2(self[1, 2], self[1, 0])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XZX:
                     theta2 = sympy.acos(self[0, 0])
                     theta1 = sympy.atan2(self[2, 0], self[1, 0])
                     theta3 = sympy.atan2(self[0, 2], -self[0, 1])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZYZ:
                     theta2 = sympy.acos(self[2, 2])
                     theta1 = sympy.atan2(self[1, 2], -self[0, 2])
                     theta3 = sympy.atan2(self[2, 1], self[2, 0])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YXY:
                     theta2 = sympy.acos(self[1, 1])
                     theta1 = sympy.atan2(self[0, 1], self[2, 1])
                     theta3 = sympy.atan2(self[1, 0], -self[1, 2])
-                    self._euler_spec = (
-                        (theta1, theta2, theta3)
-                        if EulerOrder.FIXED
-                        else (theta3, theta2, theta1),
-                        sequence,
-                        order,
-                    )
+                    euler_angles = EulerAngles(theta1, theta2, theta3)
+
                 case _:
                     raise NotImplementedError
+        if EulerOrder.MOVING:
+            euler_angles = euler_angles.T
+        self._euler_spec = EulerSpec(
+            euler_angles,
+            sequence,
+            order,
+        )
         return self._euler_spec
 
     @staticmethod
@@ -406,9 +353,9 @@ class Rotation(sympy.Matrix):
 class Translation(sympy.Matrix):
     def __new__(
         cls,
-        x: sympy.Expr | float = 0,
-        y: sympy.Expr | float = 0,
-        z: sympy.Expr | float = 0,
+        x: Scalar = 0,
+        y: Scalar = 0,
+        z: Scalar = 0,
     ):
         return sympy.Matrix.__new__(cls, 3, 1, [x, y, z])
 
