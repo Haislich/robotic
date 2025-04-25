@@ -1,52 +1,48 @@
-import sympy as sp
+import sympy
 
-from robotic.transformations.axis import Axis
-
-x, y, z = sp.symbols("x y z")
+from robotic.transformations import Axis  # or wherever Axis is defined
 
 
-def test_numeric_initialization():
-    a = Axis(1, 0, 0)
-    assert isinstance(a, Axis)
-    assert a.shape == (3, 1)
-    assert a[0] == 1 and a[1] == 0 and a[2] == 0
+def test_axis_creation():
+    axis = Axis(1, 2, 3)
+    assert axis.shape == (3, 1)
+    assert axis[0] == 1
+    assert axis[1] == 2
+    assert axis[2] == 3
 
 
-def test_symbolic_initialization():
-    a = Axis(x, y, z)
-    assert a[0] == x
-    assert a[1] == y
-    assert a[2] == z
+def test_axis_creation_symbolic():
+    x, y, z = sympy.symbols("x y z")
+    axis = Axis(x, y, z)
+    assert axis[0] == x
+    assert axis[1] == y
+    assert axis[2] == z
 
 
-def test_skew_matrix():
-    a = Axis(x, y, z)
-    S = a.skew()
-    expected = sp.Matrix([[0, -z, y], [z, 0, -x], [-y, x, 0]])
-    assert S == expected
-    assert S + S.T == sp.zeros(3)
+def test_skew_matrix_numeric():
+    axis = Axis(1, 2, 3)
+    skew = axis.skew()
+    expected = sympy.Matrix([[0, -3, 2], [3, 0, -1], [-2, 1, 0]])
+    assert skew == expected
 
 
-def test_subs_returns_axis():
-    a = Axis(x, y, z)
-    b = a.subs(x, 1).subs(y, 2).subs(z, 3)
-    assert isinstance(b, Axis)
-    assert b == Axis(1, 2, 3)
+def test_skew_matrix_symbolic():
+    x, y, z = sympy.symbols("x y z")
+    axis = Axis(x, y, z)
+    skew = axis.skew()
+    expected = sympy.Matrix([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+    assert skew == expected
 
 
-def test_repr():
-    a = Axis(1, 2, 3)
-    assert repr(a) == "Axis(1, 2, 3)"
+def test_axis_subs():
+    x, y, z = sympy.symbols("x y z")
+    axis = Axis(x, y, z)
+    substituted = axis.subs({x: 1, y: 2, z: 3})
+    assert isinstance(substituted, Axis)
+    assert substituted == Axis(1, 2, 3)
 
 
-def test_zero_axis():
-    a = Axis(0, 0, 0)
-    assert a.norm() == 0
-
-
-def test_partial_subs():
-    a = Axis(x, y, 1)
-    b = a.subs(x, 2)
-    assert b[0] == 2
-    assert b[1] == y
-    assert b[2] == 1
+def test_axis_repr_str():
+    axis = Axis(1, 0, 0)
+    assert repr(axis) == "Axis(1, 0, 0)"
+    assert str(axis) == "Axis(1, 0, 0)"

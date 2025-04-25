@@ -9,7 +9,15 @@ from robotic.transformations import Rotation
 
 
 def draw_frame(
-    rotation=Rotation.identity(),
+    rotation=Rotation(
+        sympy.Matrix(
+            [
+                [1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ]
+        )
+    ),
     label="",
     *,
     length=2.5,
