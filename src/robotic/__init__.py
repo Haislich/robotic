@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from robotic!")
+import sympy
+
+Scalar = int | float | sympy.Expr | sympy.Function | sympy.Basic

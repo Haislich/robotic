@@ -7,7 +7,9 @@ import numpy as np
 import pandas as pd
 import sympy
 
+from robotic import Scalar
 from robotic.transformations import (
+    AxisAngleSpec,
     EulerOrder,
     EulerSequence,
     HomogeneousTransformation,
@@ -16,7 +18,6 @@ from robotic.transformations import (
     X,
     Z,
 )
-from robotic.typing import Scalar
 
 
 class DHTable(pd.DataFrame):
@@ -201,12 +202,12 @@ class Manipulator:
         for _, row in self.dh_table().iterrows():
             T = T @ (
                 HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(Z, row.theta)
+                    Rotation.from_axis_angle(AxisAngleSpec(Z, row.theta))
                 )
                 @ HomogeneousTransformation.from_translation(Translation(0, 0, row.d))
                 @ HomogeneousTransformation.from_translation(Translation(row.a, 0, 0))
                 @ HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(X, row.alpha)
+                    Rotation.from_axis_angle(AxisAngleSpec(X, row.alpha))
                 )
             )
         if simplify:
