@@ -5,7 +5,6 @@ from typing import (
     Any,
     Generic,
     Iterator,
-    List,
     Optional,
     Sequence,
     Tuple,
@@ -17,7 +16,6 @@ from typing import (
 
 import sympy
 from loguru import logger
-from sympy.matrices.expressions.matexpr import MatrixElement
 
 from robotic import Scalar
 
@@ -43,20 +41,19 @@ class SymbolicConditional(Generic[T]):
     def __len__(self) -> int:
         return len(self.branches)
 
-    def subs(self, *args, **kwargs) -> T | Sequence[T]:
-        ret = []
+    def is_symbolic(self):
+        return True
+
+    def subs(self, *args, **kwargs) -> T:
         for branch in self.branches:
-            condition = sympy.S(branch.condition)
-            cond_eval = condition.subs(*args, **kwargs)
-            if cond_eval:
-                value = sympy.S(branch.value)
+            cond_eval = sympy.sympify(branch.condition).subs(*args, **kwargs)
+            # Best-effort evaluation
+            if bool(cond_eval):
+                value = branch.value
+                if hasattr(value, "subs"):
+                    return value.subs(*args, **kwargs)  # type: ignore
                 return value
-        #         ret.append(value.subs(*args, **kwargs))
-        # if len(ret) == 0:
-        #     raise ValueError("No matching branch found for the given substitution.")
-        # if len(ret) == 1:
-        #     return ret[0]
-        # return ret
+        raise ValueError("No condition matched during substitution.")
 
     def __str__(self) -> str:
         return "\n".join([str(elem) for elem in self])
@@ -95,12 +92,18 @@ Z = Axis(0, 0, 1)
 
 
 class AxisAngleSpec:
-    axis: Axis | SymbolicConditional[Axis]
+    axis: Axis
     theta: Scalar
 
-    def __init__(self, axis: Axis | SymbolicConditional[Axis], theta: Scalar) -> None:
+    def __init__(self, axis: Axis, theta: Scalar) -> None:
         self.axis = axis
         self.theta = theta
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        return f"AxisAngleSpec({self.axis=},{self.theta=})"
 
 
 @dataclass
@@ -157,29 +160,25 @@ class EulerSpec:
 
 
 class Rotation(sympy.Matrix):
-    _axis_angle_spec: Optional[AxisAngleSpec | Tuple[AxisAngleSpec, AxisAngleSpec]] = (
-        None
-    )
+    _axis_angle_spec: Optional[
+        AxisAngleSpec
+        | Tuple[AxisAngleSpec, AxisAngleSpec]
+        | SymbolicConditional[AxisAngleSpec]
+    ] = None
     _euler_spec: Optional[EulerSpec] = None
 
     def __new__(cls, mat: sympy.Matrix, *, tollerance=1e-4):
         if mat.shape[0] != mat.shape[1]:
             raise ValueError("A rotation matrix is a square matrix")
-        logger.debug(f"{mat=}")
         determinant = sympy.simplify(mat.det())
-        logger.debug(f"{determinant=}")
         ortho_check = sympy.simplify(mat.T * mat - sympy.eye(3))
-        logger.debug(f"{ortho_check=}")
-
-        is_numeric = all(entry.is_number for entry in mat)  # type: ignore
-
-        if is_numeric:
+        if not mat.is_symbolic():
             if not abs(float(determinant) - 1) < tollerance:
                 raise ValueError(f"Det ≠ 1: found {determinant}")
             if not all(abs(float(val)) < tollerance for val in ortho_check):
                 raise ValueError(f"R.T * R ≠ I: found {mat}, {mat.T}")
         else:
-            print("⚠️ Skipping numeric validation: matrix is symbolic")
+            logger.warning("Skipping numeric validation: matrix is symbolic")
 
         return super().__new__(cls, mat.cols, mat.rows, mat)
 
@@ -201,64 +200,121 @@ class Rotation(sympy.Matrix):
             )
         )
 
+    @overload
+    @staticmethod
+    def from_axis_angle(axis_angle_spec: AxisAngleSpec) -> "Rotation": ...
+
+    @overload
     @staticmethod
     def from_axis_angle(
-        axis_angle_spec: AxisAngleSpec,
+        axis_angle_spec: SymbolicConditional[AxisAngleSpec],
+    ) -> SymbolicConditional["Rotation"]: ...
+
+    @staticmethod
+    def from_axis_angle(
+        axis_angle_spec: AxisAngleSpec
+        | Tuple[AxisAngleSpec, AxisAngleSpec]
+        | SymbolicConditional[AxisAngleSpec],
     ) -> "Rotation | SymbolicConditional[Rotation]":
-        r = axis_angle_spec.axis
-        theta = axis_angle_spec.theta
-        if isinstance(r, Axis):
+        if isinstance(axis_angle_spec, AxisAngleSpec):
+            r = axis_angle_spec.axis
+            theta = axis_angle_spec.theta
             identity = sympy.eye(3)
             skew = sympy.Matrix(r.skew())
             twist = skew * sympy.sin(theta)
             flatten = (sympy.Integer(1) - sympy.cos(theta)) * skew**2
             return Rotation(identity + twist + flatten)
 
-        ret = []
-        for elem in r:
-            if any(val.has(sympy.nan) for val in elem.value):
-                continue
+        elif isinstance(axis_angle_spec, tuple):
+            elem = axis_angle_spec[0]
             identity = sympy.eye(3)
-            skew = sympy.Matrix(elem.value.skew())
-            twist = skew * sympy.sin(theta)
-            flatten = (sympy.Integer(1) - sympy.cos(theta)) * skew**2
-            logger.debug(f"{identity}, {twist=},  {flatten=}")
+            skew = sympy.Matrix(elem.axis.skew())
+            twist = skew * sympy.sin(elem.theta)
+            flatten = (sympy.Integer(1) - sympy.cos(elem.theta)) * skew**2
+            return Rotation(identity + twist + flatten)
 
-            logger.debug(f"{identity + twist + flatten =}")
-            ret.append(
-                SymbolicBranch(Rotation(identity + twist + flatten), elem.condition)
-            )
+        elif isinstance(axis_angle_spec, SymbolicConditional):
+            ret = []
+            for elem in axis_angle_spec:
+                identity = sympy.eye(3)
+                skew = sympy.Matrix(elem.value.axis.skew())
+                twist = skew * sympy.sin(elem.value.theta)
+                flatten = (sympy.Integer(1) - sympy.cos(elem.value.theta)) * skew**2
+                ret.append(
+                    SymbolicBranch(Rotation(identity + twist + flatten), elem.condition)
+                )
+                return SymbolicConditional(ret)
+        raise TypeError("Axis angle specification not valid")
 
-        return SymbolicConditional(ret)
+    @overload
+    def to_axis_angle(self) -> AxisAngleSpec: ...
+    @overload
+    def to_axis_angle(self) -> Tuple[AxisAngleSpec, AxisAngleSpec]: ...
+    @overload
+    def to_axis_angle(self) -> SymbolicConditional[AxisAngleSpec]: ...
 
-    def to_axis_angle(self) -> AxisAngleSpec:
+    def to_axis_angle(
+        self,
+    ) -> Optional[
+        AxisAngleSpec
+        | Tuple[AxisAngleSpec, AxisAngleSpec]
+        | SymbolicConditional[AxisAngleSpec]
+    ]:
         if self._axis_angle_spec is None:
             theta = sympy.atan2(
                 sympy.sqrt(
-                    (self[0, 1] - self[1, 0]) ** 2
-                    + (self[0, 2] - self[2, 0]) ** 2
-                    + (self[1, 2] - self[2, 1]) ** 2
+                    (sympy.sympify(self[0, 1]) - sympy.sympify(self[1, 0])) ** 2
+                    + (sympy.sympify(self[0, 2]) - sympy.sympify(self[2, 0])) ** 2
+                    + (sympy.sympify(self[1, 2]) - sympy.sympify(self[2, 1])) ** 2
                 ),
-                (self[0, 0] + self[1, 1] + self[2, 2]) - 1,
+                (
+                    sympy.sympify(self[0, 0])
+                    + sympy.sympify(self[1, 1])
+                    + sympy.sympify(self[2, 2])
+                )
+                - 1,
             )
             sin_theta = sympy.sin(theta)
             if self.is_symbolic():
-                pieces = [
+                branches = [
                     # Any solution is good,so I chose the X
-                    SymbolicBranch(Axis(1, 0, 0), sympy.Eq(theta, 0)),
                     SymbolicBranch(
-                        Axis(
-                            (self[2, 1] - self[1, 2]) / (sympy.S(2) * sin_theta),
-                            (self[0, 2] - self[2, 0]) / (sympy.S(2) * sin_theta),
-                            (self[1, 0] - self[0, 1]) / (sympy.S(2) * sin_theta),
+                        AxisAngleSpec(Axis(1, 0, 0), theta), sympy.Eq(theta, 0)
+                    ),
+                    SymbolicBranch(
+                        AxisAngleSpec(
+                            Axis(
+                                sympy.sympify(self[2, 1])
+                                - sympy.sympify(self[1, 2])
+                                / (sympy.sympify(2) * sin_theta),
+                                sympy.sympify(self[0, 2])
+                                - sympy.sympify(self[2, 0])
+                                / (sympy.sympify(2) * sin_theta),
+                                sympy.sympify(self[1, 0])
+                                - sympy.sympify(self[0, 1])
+                                / (sympy.sympify(2) * sin_theta),
+                            ),
+                            theta,
                         ),
                         sympy.Eq(True, True),
                     ),
                 ]
                 for sx, sy, sz in product([1, -1], repeat=3):
-                    ax = sympy.S(sx) * sympy.sqrt((self[0, 0] + 1) / 2)
-                    ay = sympy.S(sy) * sympy.sqrt((self[1, 1] + 1) / 2)
-                    az = sympy.S(sz) * sympy.sqrt((self[2, 2] + 1) / 2)
+                    ax = (
+                        sympy.sympify(sx)
+                        * sympy.sqrt(sympy.sympify(self[0, 0]) + 1)
+                        / 2
+                    )
+                    ay = (
+                        sympy.sympify(sy)
+                        * sympy.sqrt(sympy.sympify(self[1, 1]) + 1)
+                        / 2
+                    )
+                    az = (
+                        sympy.sympify(sz)
+                        * sympy.sqrt(sympy.sympify(self[2, 2]) + 1)
+                        / 2
+                    )
 
                     # Each component of the axis must satisfy the off-diagonal conditions
                     cond: sympy.Basic = sympy.And(
@@ -267,42 +323,55 @@ class Rotation(sympy.Matrix):
                         sympy.Eq(self[0, 2], 2 * ax * az),
                         sympy.Eq(self[1, 2], 2 * ay * az),
                     )
-                    pieces.insert(0, SymbolicBranch(Axis(ax, ay, az), cond))
-                self._axis_angle_spec = AxisAngleSpec(
-                    SymbolicConditional(pieces), theta
-                )
+                    branches.insert(
+                        0, SymbolicBranch(AxisAngleSpec(Axis(ax, ay, az), theta), cond)
+                    )
+                self._axis_angle_spec = SymbolicConditional(branches)
             else:
                 if (theta == sympy.pi) or (theta == -sympy.pi):
-                    candidates = []
+                    rx = sympy.sqrt((sympy.sympify(self[0, 0]) + 1) / 2)
+                    ry = sympy.sqrt((sympy.sympify(self[1, 1]) + 1) / 2)
+                    rz = sympy.sqrt((sympy.sympify(self[2, 2]) + 1) / 2)
+
+                    # Try both sign combinations to check consistency with off-diagonal entries
+
                     for sx, sy, sz in product([1, -1], repeat=3):
-                        ax = float(sx) * sympy.sqrt((self[0, 0] + 1) / 2)
-                        ay = float(sy) * sympy.sqrt((self[1, 1] + 1) / 2)
-                        az = float(sz) * sympy.sqrt((self[2, 2] + 1) / 2)
+                        ax = sympy.sympify(sx) * rx
+                        ay = sympy.sympify(sy) * ry
+                        az = sympy.sympify(sz) * rz
 
-                        # Numerical values may have small errors, use a tolerance
-                        def isclose(a, b, tol=1e-4):
-                            return abs(a - b) < tol
-
+                        # Check sign consistency using off-diagonal terms
                         if (
-                            isclose(self[0, 1], 2 * ax * ay)
-                            and isclose(self[0, 2], 2 * ax * az)
-                            and isclose(self[1, 2], 2 * ay * az)
+                            sympy.simplify(
+                                ax * ay - sympy.sympify(self[0, 1]) / 2
+                            ).equals(0)
+                            and sympy.simplify(
+                                ax * az - sympy.sympify(self[0, 2]) / 2
+                            ).equals(0)
+                            and sympy.simplify(
+                                ay * az - sympy.sympify(self[1, 2]) / 2
+                            ).equals(0)
                         ):
-                            candidates.append(Axis(ax, ay, az))
+                            axis = Axis(ax, ay, az)
+                            self._axis_angle_spec = (
+                                AxisAngleSpec(axis, theta),
+                                AxisAngleSpec(-axis, theta),
+                            )
 
-                    self._axis_angle_spec = AxisAngleSpec(candidates, theta)
                 elif theta == 0:
                     self._axis_angle_spec = AxisAngleSpec(Axis(1, 0, 0), theta)
                 else:
                     self._axis_angle_spec = AxisAngleSpec(
                         Axis(
-                            (self[2, 1] - self[1, 2]) / (sympy.S(2) * sin_theta),
-                            (self[0, 2] - self[2, 0]) / (sympy.S(2) * sin_theta),
-                            (self[1, 0] - self[0, 1]) / (sympy.S(2) * sin_theta),
+                            (self[2, 1] - sympy.sympify(self[1, 2]))
+                            / (sympy.sympify(2) * sin_theta),
+                            (self[0, 2] - sympy.sympify(self[2, 0]))
+                            / (sympy.sympify(2) * sin_theta),
+                            (self[1, 0] - sympy.sympify(self[0, 1]))
+                            / (sympy.sympify(2) * sin_theta),
                         ),
                         theta,
                     )
-
         return self._axis_angle_spec
 
     @staticmethod
@@ -333,15 +402,14 @@ class Rotation(sympy.Matrix):
         sequence: EulerSequence = EulerSequence.XYZ,
         order: EulerOrder = EulerOrder.MOVING,
     ) -> EulerSpec:
-        self = cast(Any, self)  # Trust me bro
         euler_angles = EulerAngles(0, 0, 0)
         if self._euler_spec is None:
             match sequence:
                 # FIXED Tait-Bryan
                 case EulerSequence.XYZ:
                     theta2 = sympy.asin(self[0, 2])
-                    theta1 = sympy.atan2(-self[1, 2], self[2, 2])
-                    theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                    theta1 = sympy.atan2(-sympy.sympify(self[1, 2]), self[2, 2])
+                    theta3 = sympy.atan2(-sympy.sympify(self[0, 1]), self[0, 0])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XZY:
                     theta2 = -sympy.asin(self[0, 1])
@@ -350,18 +418,18 @@ class Rotation(sympy.Matrix):
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YXZ:
                     theta2 = sympy.asin(self[0, 2])
-                    theta1 = sympy.atan2(-self[1, 2], self[2, 2])
-                    theta3 = sympy.atan2(-self[0, 1], self[0, 0])
+                    theta1 = sympy.atan2(-sympy.sympify(self[1, 2]), self[2, 2])
+                    theta3 = sympy.atan2(-sympy.sympify(self[0, 1]), self[0, 0])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YZX:
                     theta2 = sympy.asin(self[1, 0])
-                    theta1 = sympy.atan2(-self[2, 0], self[0, 0])
-                    theta3 = sympy.atan2(-self[1, 2], self[1, 1])
+                    theta1 = sympy.atan2(-sympy.sympify(self[2, 0]), self[0, 0])
+                    theta3 = sympy.atan2(-sympy.sympify(self[1, 2]), self[1, 1])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZXY:
                     theta2 = sympy.asin(self[2, 1])
-                    theta1 = sympy.atan2(-self[0, 1], self[1, 1])
-                    theta3 = sympy.atan2(-self[2, 0], self[2, 2])
+                    theta1 = sympy.atan2(-sympy.sympify(self[0, 1]), self[1, 1])
+                    theta3 = sympy.atan2(-sympy.sympify(self[2, 0]), self[2, 2])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZYX:
                     theta2 = -sympy.asin(self[2, 0])
@@ -373,32 +441,32 @@ class Rotation(sympy.Matrix):
                 case EulerSequence.ZXZ:
                     theta2 = sympy.acos(self[2, 2])
                     theta1 = sympy.atan2(self[0, 2], self[1, 2])
-                    theta3 = sympy.atan2(self[2, 0], -self[2, 1])
+                    theta3 = sympy.atan2(self[2, 0], -sympy.sympify(self[2, 1]))
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XYX:
                     theta2 = sympy.acos(self[0, 0])
-                    theta1 = sympy.atan2(self[1, 0], -self[2, 0])
+                    theta1 = sympy.atan2(self[1, 0], -sympy.sympify(self[2, 0]))
                     theta3 = sympy.atan2(self[0, 1], self[0, 2])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YZY:
                     theta2 = sympy.acos(self[1, 1])
-                    theta1 = sympy.atan2(self[2, 1], -self[0, 1])
+                    theta1 = sympy.atan2(self[2, 1], -sympy.sympify(self[0, 1]))
                     theta3 = sympy.atan2(self[1, 2], self[1, 0])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.XZX:
                     theta2 = sympy.acos(self[0, 0])
                     theta1 = sympy.atan2(self[2, 0], self[1, 0])
-                    theta3 = sympy.atan2(self[0, 2], -self[0, 1])
+                    theta3 = sympy.atan2(self[0, 2], -sympy.sympify(self[0, 1]))
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.ZYZ:
                     theta2 = sympy.acos(self[2, 2])
-                    theta1 = sympy.atan2(self[1, 2], -self[0, 2])
+                    theta1 = sympy.atan2(self[1, 2], -sympy.sympify(self[0, 2]))
                     theta3 = sympy.atan2(self[2, 1], self[2, 0])
                     euler_angles = EulerAngles(theta1, theta2, theta3)
                 case EulerSequence.YXY:
                     theta2 = sympy.acos(self[1, 1])
                     theta1 = sympy.atan2(self[0, 1], self[2, 1])
-                    theta3 = sympy.atan2(self[1, 0], -self[1, 2])
+                    theta3 = sympy.atan2(self[1, 0], -sympy.sympify(self[1, 2]))
                     euler_angles = EulerAngles(theta1, theta2, theta3)
 
                 case _:
@@ -459,14 +527,7 @@ class Rotation(sympy.Matrix):
         self._axis_angle_spec = None
         self._euler_spec = None
 
-        # Perform the assignment
         super().__setitem__(key, value)
-
-        # #Validate the new matrix is still a proper rotation
-        # if not self.det().equals(1):
-        #     raise ValueError("Matrix must have determinant +1 after update.")
-        # if not self.inv().equals(self.T):
-        #     raise ValueError(r"Matrix must satisfy $R^T = R^{-1}$ after update.")
 
 
 class Translation(sympy.Matrix):
@@ -504,8 +565,10 @@ class HomogeneousTransformation(sympy.Matrix):
             raise ValueError("Homogeneous transformation must be a 4x4 matrix")
 
         # Validate components, the underlying constructor should fail
-        _rotation = Rotation(cast(sympy.Matrix, matrix[:3, :3]))
-        x, y, z = cast(Any, matrix[:3, 3])
+        _rotation = Rotation(sympy.Matrix(matrix[:3, :3]))
+        x = sympy.sympify(matrix[0, 3])
+        y = sympy.sympify(matrix[1, 3])
+        z = sympy.sympify(matrix[2, 3])
         _translation = Translation(x, y, z)
 
         bottom = matrix.row(3)
@@ -633,16 +696,9 @@ class HomogeneousTransformation(sympy.Matrix):
 
 theta = sympy.symbols(names="theta")
 # r_d = Rotation(1 / 3 * sympy.Matrix([[-2, 2, -1], [2, 1, -2], [-1, -2, -2]]))
-r_d = Rotation.from_axis_angle(AxisAngleSpec(X, theta))
-print(r_d.is_symbolic())
-# exit()
-# r_d = Rotation.from_axis_angle(AxisAngleSpec(X, theta))
-# print(theta)
+r_d = Rotation.from_axis_angle(AxisAngleSpec(X, sympy.pi))
+
 r_d_axis_spec = r_d.to_axis_angle()
-# print(r_d_axis_spec)
-# nr_d_axis_spec = r_d.to_axis_angle()
+
 print(r_d_axis_spec)
 print(Rotation.from_axis_angle(r_d_axis_spec))
-print(Rotation.from_axis_angle(r_d_axis_spec).subs(theta, 0))
-
-# print(Rotation.from_axis_angle(nr_d_axis_spec))
