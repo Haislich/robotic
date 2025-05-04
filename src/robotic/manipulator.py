@@ -1,11 +1,13 @@
 # %%
+import sys
 from enum import Enum, auto
-from typing import Dict, Optional, Sequence
+from typing import Dict, Literal, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import sympy
+from loguru import logger
 
 from robotic import Scalar
 from robotic.transformations import (
@@ -16,8 +18,12 @@ from robotic.transformations import (
     Rotation,
     Translation,
     X,
+    Y,
     Z,
 )
+
+logger.remove()
+logger.add(sys.stderr, format="{level} | {message}", colorize=True)
 
 
 class DHTable(pd.DataFrame):
@@ -27,7 +33,7 @@ class DHTable(pd.DataFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # If needed, convert entries to sympy objects
-        for col in ["a", "alpha", "d", "theta"]:
+        for col in ["a", r"\alpha", "d", r"\theta"]:
             if col in self.columns:
                 self[col] = self[col].apply(
                     lambda x: sympy.sympify(x) if not isinstance(x, str) else x
@@ -100,19 +106,70 @@ class Manipulator:
         *,
         link_dimensions: Optional[Sequence[Scalar]] = None,
     ):
+        """
+        Initialize a serial Manipulator using Denavit-Hartenberg parameters.
+
+        Parameters:
+        ----------
+        joint_types : Sequence[JointType]
+            A list specifying the type of each joint (Revolute or Prismatic).
+
+        x_rotations : Sequence[Scalar]
+            The twist angles αᵢ (in radians) — rotation around the local x-axis
+            from zᵢ₋₁ to zᵢ.
+            (i.e., how much you tilt between consecutive joint axes.)
+
+        x_offsets : Sequence[Scalar]
+            The link lengths aᵢ (in meters) — distance along the local x-axis
+            from zᵢ₋₁ to zᵢ.
+            (i.e., how far the two axes are separated horizontally.)
+
+        z_rotations : Sequence[Scalar]
+            The rotation offsets θᵢ (in radians) — additional constant rotations around the local z-axis.
+            (i.e., initial rotations needed to align xᵢ₋₁ to xᵢ.)
+
+        z_offsets : Sequence[Scalar]
+            The link offsets dᵢ (in meters) — fixed distances along the z-axis between consecutive frames.
+            (i.e., how far two frames are separated vertically.)
+
+        link_dimensions : Optional[Sequence[Scalar]]
+            (Optional) Physical lengths used for graphical visualization of the robot.
+            Defaults to unit lengths if not provided.
+
+        Notes:
+        -----
+        - For Revolute joints, θᵢ is variable (depends on qᵢ), and dᵢ is constant.
+        - For Prismatic joints, dᵢ is variable (depends on qᵢ), and θᵢ is constant.
+        - This constructor expects that the values provided already represent
+          the *fixed parts* of the D-H parameters, and symbolic variables qᵢ will be added accordingly.
+
+        - Typical mapping to D-H table:
+            - aᵢ → x_offsets[i]
+            - αᵢ → x_rotations[i]
+            - dᵢ → z_offsets[i] (constant part if Revolute)
+            - θᵢ → z_rotations[i] (constant part if Prismatic)
+        """
         self.joint_types = joint_types
         self.n = len(joint_types)
         if len(x_rotations) < self.n:
             raise ValueError("...")
+        if len(x_rotations) > self.n:
+            logger.warning("...")
         self.x_rotations = x_rotations
         if len(x_offsets) < self.n:
             raise ValueError("...")
+        if len(x_offsets) > self.n:
+            logger.warning("...")
         self.x_offsets = x_offsets
         if len(z_rotations) < self.n:
             raise ValueError("...")
+        if len(z_rotations) > self.n:
+            logger.warning("...")
         self.z_rotations = z_rotations
         if len(z_offsets) < self.n:
             raise ValueError("...")
+        if len(z_offsets) > self.n:
+            logger.warning("...")
         self.z_offsets = z_offsets
 
         self.joints = [sympy.symbols(f"q_{i + 1}") for i in range(self.n)]
@@ -120,18 +177,26 @@ class Manipulator:
 
     @staticmethod
     def from_rotations(
-        joint_types: Sequence[JointType], rotations: Sequence[Rotation]
+        joint_types: Sequence[JointType],
+        rotations: Sequence[Rotation],
+        *,
+        solution: Literal[0, 1] = 0,
     ) -> "Manipulator":
+        logger.warning(
+            "This method is still a WIP and might now work properly, double check."
+        )
         sequence = EulerSequence.XYZ
         order = EulerOrder.FIXED
-        x_rotations = [
-            rotation.to_euler(sequence, order).euler_angles.theta1
-            for rotation in rotations
-        ]
-        z_rotations = [
-            rotation.to_euler(sequence, order).euler_angles.theta3
-            for rotation in rotations
-        ]
+        x_rotations = []
+        z_rotations = []
+        for rotation in rotations:
+            euler_spec = rotation.to_euler(sequence, order)
+            if isinstance(euler_spec, tuple):
+                theta1, _, theta3 = euler_spec[solution].euler_angles
+            else:
+                theta1, _, theta3 = euler_spec.euler_angles
+            x_rotations.append(theta1)
+            z_rotations.append(theta3)
 
         return Manipulator(
             joint_types=joint_types,
@@ -193,7 +258,9 @@ class Manipulator:
                     d = q_i + d_offset
 
                 rows.append((a, alpha, d, theta, joint_type.name))
-            self._dh_table = DHTable(rows, columns=["a", "alpha", "d", "theta", "type"])
+            self._dh_table = DHTable(
+                rows, columns=["a", r"\alpha", "d", r"\theta", "type"]
+            )
         return self._dh_table
 
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
@@ -202,12 +269,16 @@ class Manipulator:
         for _, row in self.dh_table().iterrows():
             T = T @ (
                 HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(AxisAngleSpec(Z, row.theta))
+                    Rotation.from_axis_angle(AxisAngleSpec(Z, row[r"\theta"]))
                 )
-                @ HomogeneousTransformation.from_translation(Translation(0, 0, row.d))
-                @ HomogeneousTransformation.from_translation(Translation(row.a, 0, 0))
+                @ HomogeneousTransformation.from_translation(
+                    Translation(0, 0, row["d"])
+                )
+                @ HomogeneousTransformation.from_translation(
+                    Translation(row["a"], 0, 0)
+                )
                 @ HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(AxisAngleSpec(X, row.alpha))
+                    Rotation.from_axis_angle(AxisAngleSpec(X, row[r"\alpha"]))
                 )
             )
         if simplify:
@@ -216,13 +287,16 @@ class Manipulator:
         return T
 
     def plot_planar(
-        self, joint_values: Sequence[Scalar], symbol_values: Optional[Dict] = None
+        self,
+        joint_values: Sequence[Scalar],
+        symbolic_values: Optional[Dict] = None,
+        link_dimensions: Optional[Sequence[Scalar]] = None,
     ):
-        raise NotImplementedError("The implementation is still a WIP")
         subs = {q: val for q, val in zip(self.joints, joint_values)}
-        if symbol_values:
-            subs.update(symbol_values)
-
+        if symbolic_values:
+            subs.update(symbolic_values)
+        if not link_dimensions:
+            link_dimensions = [1.0] * self.n
         x, y = 0.0, 0.0
         theta = 0.0
         points = [(x, y)]
@@ -272,38 +346,6 @@ class Manipulator:
                 )
                 p = False
 
-            # if self.frames is not None:
-            #     # Frame i gives orientation at this joint
-            #     T = self.frames[i].evalf(subs=subs)
-            #     x_axis = np.array(T[:2, 0], dtype=float)
-            #     y_axis = np.array(T[:2, 1], dtype=float)
-            #     # Draw local frame axes (quivers)
-            #     ax.quiver(
-            #         x,
-            #         y,
-            #         x_axis[0],
-            #         x_axis[1],
-            #         color="red",
-            #         scale=1 / axis_length,
-            #         scale_units="xy",
-            #         angles="xy",
-            #         width=0.01,
-            #         headwidth=1,
-            #         zorder=2,
-            #     )
-            #     ax.quiver(
-            #         x,
-            #         y,
-            #         y_axis[0],
-            #         y_axis[1],
-            #         color="green",
-            #         scale=1 / axis_length,
-            #         scale_units="xy",
-            #         angles="xy",
-            #         width=0.01,
-            #         zorder=2,
-            #     )
-
         # End-effector point (optional: make it distinct)
         ax.scatter(
             xs[-1], ys[-1], color="blue", s=100, marker="*", label="End-effector"
@@ -331,24 +373,37 @@ class Manipulator:
 
 # joint_types = [
 #     JointType.REVOLUTE,
-#     JointType.PRISMATIC,
-#     # JointType.REVOLUTE,
-#     # JointType.REVOLUTE,
-#     # JointType.REVOLUTE,
-#     # JointType.REVOLUTE,
-#     # JointType.REVOLUTE,
+#     JointType.REVOLUTE,
 # ]
-# x_offsets = [0, 0, 0, 0, 0, 0, 0]
-# x_rotations = [0, 0, 0, 0, 0, 0, 0]
-# man = Manipulator(
-#     x_offsets=x_offsets,
-#     x_rotations=x_rotations,
-#     joint_types=joint_types,
-# )
-# man.dh_table()
-# man.dh_matrix()
+# x_offsets = [0, 0]
+# x_rotations = [
+#     0,
+#     0,
+# ]
 
-# man.plot_planar(
-#     [sympy.pi / 2, 4, 0, 0, 0, 0, sympy.pi / 2],
-#     {"L": 1.0},
+# z_offsets = [0, 0]
+# z_rotations = [
+#     0,
+#     0,
+# ]
+
+# man = Manipulator(
+#     joint_types=joint_types,
+#     x_rotations=x_rotations,
+#     x_offsets=x_offsets,
+#     z_rotations=z_rotations,
+#     z_offsets=z_offsets,
 # )
+
+# man.plot_workspace(
+#     [-sympy.pi / 2, sympy.pi / 2],
+# )
+
+# man_l = Manipulator(
+#     [JointType.REVOLUTE, JointType.REVOLUTE, JointType.REVOLUTE],
+#     [0, 0, 0],
+#     [sympy.symbols("L_0"), sympy.symbols("L_{l1}"), sympy.symbols("L_{l2}")],
+#     [0, 0, sympy.pi / 2],
+#     [0, 0, 0],
+# )
+# print(man_l.dh_matrix())

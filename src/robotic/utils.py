@@ -9,7 +9,7 @@ from robotic.transformations import Rotation
 
 
 def draw_frame(
-    rotation=Rotation(
+    rotation: Rotation = Rotation(
         sympy.Matrix(
             [
                 [1, 0, 0],
@@ -18,9 +18,9 @@ def draw_frame(
             ]
         )
     ),
-    label="",
+    label: str = "",
     *,
-    length=2.5,
+    length: float = 2.5,
     basis=Rotation(
         sympy.Matrix(
             [
@@ -30,6 +30,7 @@ def draw_frame(
             ]
         )
     ),
+    plot=True,
 ):
     """
     Draw a right-handed coordinate frame with X→right, Y↑, Z⊙out of screen.
@@ -69,6 +70,6 @@ def draw_frame(
 
     ax.set_title(label)
     ax.legend()
-
-    plt.show()
+    if plot:
+        plt.show()
     return Rotation(sympy.Matrix(frame))
