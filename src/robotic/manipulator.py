@@ -1,7 +1,7 @@
 # %%
 import sys
 from enum import Enum, auto
-from typing import Dict, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +11,7 @@ from loguru import logger
 
 from robotic import Scalar
 from robotic.transformations import (
+    Axis,
     AxisAngleSpec,
     EulerOrder,
     EulerSequence,
@@ -18,7 +19,6 @@ from robotic.transformations import (
     Rotation,
     Translation,
     X,
-    Y,
     Z,
 )
 
@@ -93,7 +93,7 @@ class JointType(Enum):
 class Manipulator:
     _dh_table: Optional[DHTable] = None
     _dh_matrix: Optional[HomogeneousTransformation] = None
-    frames: Optional[Sequence[HomogeneousTransformation]] = None
+    _frames: Optional[List[HomogeneousTransformation]] = None
     n: int
 
     def __init__(
@@ -186,7 +186,7 @@ class Manipulator:
             "This method is still a WIP and might now work properly, double check."
         )
         sequence = EulerSequence.XYZ
-        order = EulerOrder.FIXED
+        order = EulerOrder.MOVING
         x_rotations = []
         z_rotations = []
         for rotation in rotations:
@@ -263,28 +263,68 @@ class Manipulator:
             )
         return self._dh_table
 
+    def frames(self, simplify: bool = True) -> List[HomogeneousTransformation]:
+        if self._frames is None:
+            self._frames = []
+            for _, row in self.dh_table().iterrows():
+                frame = (
+                    HomogeneousTransformation.from_rotation(
+                        Rotation.from_axis_angle(AxisAngleSpec(Z, row[r"\theta"]))
+                    )
+                    @ HomogeneousTransformation.from_translation(
+                        Translation(0, 0, row["d"])
+                    )
+                    @ HomogeneousTransformation.from_translation(
+                        Translation(row["a"], 0, 0)
+                    )
+                    @ HomogeneousTransformation.from_rotation(
+                        Rotation.from_axis_angle(AxisAngleSpec(X, row[r"\alpha"]))
+                    )
+                )
+                if simplify:
+                    frame = HomogeneousTransformation(sympy.simplify(frame))
+                self._frames.append(frame)
+        return self._frames
+
     def dh_matrix(self, simplify: bool = True) -> HomogeneousTransformation:
+        if self._dh_matrix is None:
+            T = HomogeneousTransformation.identity()
+            for frame in self.frames():
+                T = T @ frame
+                if simplify:
+                    T = HomogeneousTransformation(sympy.simplify(T))
+            self._dh_matrix = T
+        return self._dh_matrix
+
+    def geometric_jacobian(
+        self, *, simplify: bool = True, evaluation_frame: Optional[int] = None
+    ) -> sympy.Matrix:
         T = HomogeneousTransformation.identity()
-        self.frames = [T]
-        for _, row in self.dh_table().iterrows():
-            T = T @ (
-                HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(AxisAngleSpec(Z, row[r"\theta"]))
-                )
-                @ HomogeneousTransformation.from_translation(
-                    Translation(0, 0, row["d"])
-                )
-                @ HomogeneousTransformation.from_translation(
-                    Translation(row["a"], 0, 0)
-                )
-                @ HomogeneousTransformation.from_rotation(
-                    Rotation.from_axis_angle(AxisAngleSpec(X, row[r"\alpha"]))
-                )
-            )
-        if simplify:
-            T = HomogeneousTransformation(sympy.simplify(T))
-        self.frames.append(T)
-        return T
+        Ts: list[HomogeneousTransformation] = [T]
+        if evaluation_frame is None:
+            evaluation_frame = self.n
+        for A_i in self.frames():  # frames() already gives i-1 A i
+            T = T @ A_i
+            Ts.append(T)
+        p_e = Ts[evaluation_frame].as_translation()
+        JA_cols = []
+        JL_cols = []
+        for i in range(evaluation_frame):
+            #  z_{i-1}
+            z_im1 = Ts[i].as_rotation() @ Z
+            p_im1 = Ts[i].as_translation()  #   p_{i-1} in RF₀
+
+            if self.joint_types[i] == JointType.REVOLUTE:
+                JA_cols.append(z_im1)
+                JL_cols.append(z_im1.cross(p_e - p_im1))
+            else:  # PRISMATIC
+                JA_cols.append(Axis(0, 0, 0))
+                JL_cols.append(z_im1)
+
+        JL = sympy.Matrix.hstack(*JL_cols)
+        JA = sympy.Matrix.hstack(*JA_cols)
+        J = sympy.Matrix.vstack(JL, JA)
+        return sympy.simplify(J) if simplify else J
 
     def plot_planar(
         self,

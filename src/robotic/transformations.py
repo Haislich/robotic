@@ -64,18 +64,22 @@ class SymbolicConditional(Generic[T]):
 class Axis(sympy.Matrix):
     def __new__(cls, x1: Scalar, x2: Scalar, x3: Scalar):
         vec = sympy.Matrix([x1, x2, x3])
-        norm = vec.norm()
-
-        if not norm.equals(1):
-            logger.warning(f"Normalizing axis vector: norm = {norm}")
-            vec = vec / norm
-
+        if not vec.is_symbolic():
+            norm = vec.norm()
+            if not norm.equals(1):
+                logger.warning(f"Normalizing axis vector: norm = {norm}")
+                vec = vec / norm
+        else:
+            logger.warning("Skipping normalization: vector is symbolic")
         return sympy.Matrix.__new__(cls, 3, 1, vec)
 
     def round(self, digits=4) -> "Axis":
         # TODO: Implement rounding os an axis
         raise NotImplementedError
         # x1 = self[0] if self[0].is_symbol() else
+
+    def simplify(self) -> "Axis":
+        return Axis(*sympy.simplify(self))
 
     def skew(self):
         x = sympy.sympify(self[0])
@@ -281,6 +285,9 @@ class Rotation(sympy.Matrix):
         verbose: bool = False,
     ) -> "Rotation":
         return Rotation(super().evalf(n, subs, maxn, chop, strict, quad, verbose))
+
+    def simplify(self) -> "Rotation":
+        return Rotation(sympy.simplify(self))
 
     def round(self, digits=4) -> "Rotation":
         if self.is_symbolic():
@@ -557,12 +564,23 @@ class Rotation(sympy.Matrix):
         ] = EulerSequence.XYZ,
         euler_order: EulerOrder | Literal["MOVING", "FIXED"] = EulerOrder.MOVING,
     ) -> EulerSpec | Tuple[EulerSpec, EulerSpec]:
-        if self._euler_spec is not None:
-            return self._euler_spec
         if isinstance(euler_sequence, str):
             euler_sequence = EulerSequence(euler_sequence)
         if isinstance(euler_order, str):
             euler_order = EulerOrder(euler_order)
+        if self._euler_spec is not None:
+            if (
+                isinstance(self._euler_spec, tuple)
+                and (self._euler_spec[0].euler_order == euler_order)
+                and (self._euler_spec[0].euler_sequence == euler_sequence)
+                and (self._euler_spec[1].euler_order == euler_order)
+                and (self._euler_spec[1].euler_sequence == euler_sequence)
+            ) or (
+                isinstance(self._euler_spec, EulerSpec)
+                and (self._euler_spec.euler_order == euler_order)
+                and (self._euler_spec.euler_sequence == euler_sequence)
+            ):
+                return self._euler_spec
 
         logger.info(
             f"Starting Euler angle extraction with euler sequence {euler_sequence} and euler order {euler_order}",
@@ -951,21 +969,22 @@ class Rotation(sympy.Matrix):
         return isinstance(obj, HomogeneousTransformation)
 
     @overload
-    def __matmul__(
-        self, other: "HomogeneousTransformation"
-    ) -> "HomogeneousTransformation": ...
+    def __matmul__(self, other: Axis) -> Axis: ...
 
     @overload
     def __matmul__(self, other: "Rotation") -> "Rotation": ...
 
     @overload
-    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+    def __matmul__(
+        self, other: "HomogeneousTransformation"
+    ) -> "HomogeneousTransformation": ...
 
     @overload
-    def __matmul__(self, other: Axis) -> Axis: ...
+    def __matmul__(self, other: sympy.Matrix) -> sympy.Matrix: ...
+
     def __matmul__(
-        self, other: "Rotation |HomogeneousTransformation |sympy.Matrix"
-    ) -> "Rotation | HomogeneousTransformation| sympy.Matrix":
+        self, other: "Rotation | Axis | HomogeneousTransformation | sympy.Matrix"
+    ) -> "Rotation | Axis | HomogeneousTransformation| sympy.Matrix":
         if self.is_axis(other):
             return Axis(*(super().__matmul__(sympy.Matrix(other))))
         if self.is_rotation(other):
@@ -1076,7 +1095,7 @@ class HomogeneousTransformation(sympy.Matrix):
         return HomogeneousTransformation(matrix)
 
     def as_rotation(self) -> "Rotation":
-        mat = cast(sympy.Matrix, self[:3, :3])
+        mat = sympy.Matrix(self[:3, :3])
         return Rotation(mat / self.scale)
 
     def with_rotation(self, rotation: Rotation) -> "HomogeneousTransformation":
@@ -1085,10 +1104,6 @@ class HomogeneousTransformation(sympy.Matrix):
                 sympy.Matrix([[0, 0, 0, self.scale]])
             )
         )
-
-    @staticmethod
-    def is_rotation(obj) -> TypeGuard[Rotation]:
-        return isinstance(obj, Rotation)
 
     @staticmethod
     def from_translation(translation: Translation) -> "HomogeneousTransformation":
@@ -1106,10 +1121,6 @@ class HomogeneousTransformation(sympy.Matrix):
         x, y, z = cast(Any, self[:3, 3])
         return Translation(x, y, z)
 
-    @staticmethod
-    def is_translation(obj: sympy.Matrix) -> TypeGuard[Translation]:
-        return isinstance(obj, Translation)
-
     def with_translation(
         self, new_translation: Translation
     ) -> "HomogeneousTransformation":
@@ -1118,6 +1129,17 @@ class HomogeneousTransformation(sympy.Matrix):
             .row_join(new_translation)
             .col_join(sympy.Matrix([[0, 0, 0, self.scale]]))
         )
+
+    def simplify(self) -> "HomogeneousTransformation":
+        return HomogeneousTransformation(sympy.simplify(self))
+
+    @staticmethod
+    def is_rotation(obj) -> TypeGuard[Rotation]:
+        return isinstance(obj, Rotation)
+
+    @staticmethod
+    def is_translation(obj: sympy.Matrix) -> TypeGuard[Translation]:
+        return isinstance(obj, Translation)
 
     @staticmethod
     def is_homogeneous(obj: sympy.Matrix) -> TypeGuard["HomogeneousTransformation"]:
@@ -1161,6 +1183,3 @@ class HomogeneousTransformation(sympy.Matrix):
             if row < (self.rows - 1):
                 ret += "\n"
         return ret
-
-
-print(Rotation.identity() @ Y)

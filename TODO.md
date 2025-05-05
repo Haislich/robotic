@@ -4,3 +4,4 @@
 - [] Try to plot the primary workspace
 - [] Try to create a function that determines if a point is in the workspace or not
 - [] Add an option to disable logging info, to avoid clutter in subcalls
+- [] Create a way to store different euler angle sequences
