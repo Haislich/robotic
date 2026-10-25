@@ -226,6 +226,12 @@ class AxisAngleSolutions[F: Frame](Symbolic):
                 second.angle,
             ),
             shape=(2, 4),
+            condition=Layout(
+                label="ValidityCondition",
+                entries=(self._valid_when.expression,),
+                shape=(),
+                tolerance=self._valid_when.tolerance,
+            ),
         )
 
     @override

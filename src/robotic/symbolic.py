@@ -13,9 +13,15 @@ from typing import TYPE_CHECKING, Self, override
 import jax
 import jax.numpy as jnp
 import sympy
+from jax.typing import ArrayLike
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from _typeshed import DataclassInstance
+
+    from robotic.geometry import Frame
+    from robotic.rotation import AxisAngleSolutions
 
 jax.config.update(name="jax_enable_x64", val=True)
 
@@ -65,13 +71,16 @@ class Layout:
         label: The quantity's type as printed in a compiled result, e.g. `Point[Base]`.
         entries: The scalars, row-major.
         shape: The natural shape of the compiled components.
-        tolerance: When set, the compiled result is the flag `|entry| > tolerance`.
+        tolerance: When set, the compiled components are the flag `|entry| > tolerance`.
+        condition: When set, a validity condition compiled alongside into the result's
+            flag; otherwise the flag is true.
     """
 
     label: str
     entries: tuple[Scalar, ...]
     shape: tuple[int, ...]
     tolerance: float | None = None
+    condition: Layout | None = None
 
 
 class Scalar(Symbolic):
@@ -341,42 +350,45 @@ class MissingParameterError(ValueError):
 
 
 class ParameterTypeError(TypeError):
-    """A field of the parameters dataclass is not annotated `float`."""
+    """A field of the parameters dataclass is neither `float` nor `ArrayLike`."""
 
     def __init__(self, parameters: type[DataclassInstance], name: str) -> None:
         """Name the parameters class and the field.
 
         Args:
             parameters: The parameters dataclass.
-            name: The field not annotated `float`.
+            name: The field with another annotation.
         """
-        super().__init__(
-            f"field {name!r} of {parameters.__name__} must be annotated float"
-        )
+        message = "must be annotated float or ArrayLike"
+        super().__init__(f"field {name!r} of {parameters.__name__} {message}")
 
 
 class Compiled[P: DataclassInstance, T: Symbolic]:
     """A symbolic quantity compiled to a JIT-compiled JAX function of `P`."""
+
+    _evaluate: Callable[..., Numeric[T]]
 
     def __init__(self, quantity: T, parameters: type[P]) -> None:
         """Compile the quantity; validation happens once, here.
 
         Args:
             quantity: The symbolic quantity.
-            parameters: A dataclass whose fields, all annotated `float`, name the
-                symbols of the quantity. Extra fields are allowed.
+            parameters: A dataclass whose fields name the symbols of the quantity,
+                each annotated `float` (one configuration) or `jax.typing.ArrayLike`
+                (batched code). Extra fields are allowed.
 
         Raises:
-            ParameterTypeError: A field is not annotated `float`.
+            ParameterTypeError: A field is annotated neither `float` nor `ArrayLike`.
             MissingParameterError: A free symbol of the quantity has no field.
         """
         layout = quantity._layout()
         hints = typing.get_type_hints(parameters)
         names = tuple(field.name for field in dataclasses.fields(parameters))
         for name in names:
-            if hints[name] is not float:
+            if hints[name] is not float and hints[name] != ArrayLike:
                 raise ParameterTypeError(parameters, name)
-        expressions = [entry._expression for entry in layout.entries]
+        flag = layout.condition.entries if layout.condition else ()
+        expressions = [entry._expression for entry in (*layout.entries, *flag)]
         free = frozenset(
             str(symbol)
             for expression in expressions
@@ -391,14 +403,25 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         self._function = sympy.lambdify(symbols, expressions, modules="jax")
         self._evaluate = jax.jit(self._kernel)
 
-    def _kernel(self, *values: jax.Array) -> jax.Array:
-        entries = [
+    @staticmethod
+    def _shaped(values: list[jax.Array], layout: Layout) -> jax.Array:
+        components = jnp.stack(values).reshape(layout.shape)
+        if layout.tolerance is None:
+            return components
+        return jnp.abs(components) > layout.tolerance
+
+    def _kernel(self, *values: jax.Array) -> Numeric[T]:
+        results = [
             jnp.asarray(entry, dtype=jnp.float64) for entry in self._function(*values)
         ]
-        components = jnp.stack(entries).reshape(self._layout.shape)
-        if self._layout.tolerance is None:
-            return components
-        return jnp.abs(components) > self._layout.tolerance
+        size = len(self._layout.entries)
+        components = self._shaped(results[:size], self._layout)
+        valid = (
+            self._shaped(results[size:], self._layout.condition)
+            if self._layout.condition
+            else jnp.ones((), dtype=bool)
+        )
+        return Numeric(self._layout.label, components, valid)
 
     def __call__(self, values: P) -> Numeric[T]:
         """Evaluate at one configuration.
@@ -410,34 +433,45 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         Returns:
             The compiled result.
         """
-        arguments = [getattr(values, name) for name in self._names]
-        return Numeric(self._layout.label, self._evaluate(*arguments))
+        return self._evaluate(*(getattr(values, name) for name in self._names))
 
 
 class Numeric[T: Symbolic]:
     """The compiled value of a `T`: bare components, with the meaning kept in the type.
 
-    A registered JAX pytree: the components are its only child, the printed type its
-    static data, so it passes through `jax.jit`, `jax.vmap` and `jax.grad`.
+    A registered JAX pytree: the components and the validity flag are its children,
+    the printed type its static data, so it passes through `jax.jit`, `jax.vmap` and
+    `jax.grad`.
     """
 
-    __slots__ = ("_components", "_label")
+    __slots__ = ("_components", "_label", "_valid")
 
-    def __init__(self, label: str, components: jax.Array) -> None:
-        """Pair the components with the printed type.
+    def __init__(self, label: str, components: jax.Array, valid: jax.Array) -> None:
+        """Pair the components with the printed type and the validity flag.
 
         Args:
             label: The quantity's type as printed, e.g. `Point[Base]`.
             components: Float64 components in the natural shape (a flag for a
                 validity condition); leading axes under `vmap` are configurations.
+            valid: Where the quantity's validity condition holds; true when it has
+                none.
         """
         self._label = label
         self._components = components
+        self._valid = valid
 
     @property
     def components(self) -> jax.Array:
-        """The components: `()`, `(3,)`, `(3, 3)` or `(4, 4)` per configuration."""
+        """The components in the natural shape of `T`, per configuration."""
         return self._components
+
+    def valid[F: Frame](self: Numeric[AxisAngleSolutions[F]]) -> jax.Array:
+        """Whether the axis-angle solutions are valid by more than the tolerance.
+
+        Returns:
+            A boolean of shape `()` per configuration.
+        """
+        return self._valid
 
     @override
     def __repr__(self) -> str:
@@ -449,12 +483,17 @@ class Numeric[T: Symbolic]:
         return f"Numeric[{self._label}]({self._components.tolist()})"
 
     @staticmethod
-    def _flatten(numeric: Numeric[Symbolic]) -> tuple[tuple[jax.Array], str]:
-        return (numeric._components,), numeric._label
+    def _flatten(
+        numeric: Numeric[Symbolic],
+    ) -> tuple[tuple[jax.Array, jax.Array], str]:
+        return (numeric._components, numeric._valid), numeric._label
 
     @staticmethod
-    def _unflatten(label: str, children: tuple[jax.Array]) -> Numeric[Symbolic]:
-        return Numeric[Symbolic](label, children[0])
+    def _unflatten(
+        label: str, children: tuple[jax.Array, jax.Array]
+    ) -> Numeric[Symbolic]:
+        components, valid = children
+        return Numeric[Symbolic](label, components, valid)
 
 
 jax.tree_util.register_pytree_node(Numeric, Numeric._flatten, Numeric._unflatten)

@@ -36,11 +36,11 @@
 
 ## 6. Compilation layer
 
-- [ ] 6.1 Implement `lambdify` returning `Compiled[P, T]` against a parameters dataclass with compile-time validation (design D11); verify the missing-field, non-float field, string-annotation and extra-field scenarios, and `compiled(0.5)` and a missing constructor argument caught by the negative fixture
-- [ ] 6.2 Implement the thin frame-carrying result `Numeric[T]` with no frame accessor and the frame in its printed form (design D27), as a registered pytree in natural shapes, with `jax_enable_x64` (design D12); verify shapes and float64 dtype for each quantity, and `jit`, `vmap` (components `(2, 3)`, frame kept) and `grad` (0.8775825618903728)
-- [ ] 6.3 Add property tests comparing compiled results with the symbolic quantity substituted and with the oracle, sampling near singular configurations; verify they pass
-- [ ] 6.4 Make `ValidityCondition` compile to a flag with the tolerance and `AxisAngleSolutions` compile with its flag (design D28); verify, for `Rz(q)`, the flag is true at q = 0.5 and q = 1e-6, and false at q = 0, q = 1e-12 and q = π
-- [ ] 6.5 Document compilation in `docs/` (parameters dataclass, validation errors, `.components` in simulation, `vmap`, axis-angle compiled with its flag shown before an axis compiled alone); verify every code block runs as written
+- [x] 6.1 Implement `lambdify` returning `Compiled[P, T]` against a parameters dataclass with compile-time validation (design D11; fields `float` or `ArrayLike`); verify the missing-field, non-float field, string-annotation, batchable-field and extra-field scenarios, and `compiled(0.5)` and a missing constructor argument caught by the negative fixture
+- [x] 6.2 Implement the thin frame-carrying result `Numeric[T]` with no frame accessor and the frame in its printed form (design D27), as a registered pytree in natural shapes, with `jax_enable_x64` (design D12); verify shapes and float64 dtype for each quantity, and `jit`, `vmap` (components `(2, 3)`, frame kept) and `grad` (0.8775825618903728)
+- [x] 6.3 Add property tests comparing compiled results with the symbolic quantity substituted and with the oracle, sampling near singular configurations; verify they pass
+- [x] 6.4 Make `ValidityCondition` compile to a flag with the tolerance and `AxisAngleSolutions` compile to `(2, 4)` components with its flag read by the gated `valid()` (design D27, D28); verify, for `Rz(q)`, the flag is true at q = 0.5 and q = 1e-6, and false at q = 0, q = 1e-12 and q = π, and `valid()` on a compiled point caught by the negative fixture
+- [x] 6.5 Document compilation in `docs/` (parameters dataclass, validation errors, `.components` in simulation, `vmap`, axis-angle compiled with its flag shown before an axis compiled alone); verify every code block runs as written
 
 ## 7. Acceptance: exam 2024-09-19
 

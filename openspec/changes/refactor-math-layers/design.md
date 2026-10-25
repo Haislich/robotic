@@ -126,11 +126,13 @@ Rejected: old-style `TypeVar` with explicit variance; characterization tests or 
 
 `lambdify[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]`, `Compiled.__call__(values: P) -> Numeric[Self]`. `P` is a user-written frozen dataclass (one for the whole robot, e.g. `Joints`). Fields are matched to symbols by name; ordering is internal; extra fields are allowed. Type hints survive, so `compiled(0.5)` and `Parameters()` with a missing field are type errors.
 
-Validation is at runtime, once, at compile time: every field annotated `float` (string annotations resolved with `typing.get_type_hints`; `dataclasses.fields` alone returns the string `'float'`), every free symbol has a field, otherwise raise. The quantity and the dataclass are linked only by names; a static link needs the schema rejected in D1.
+Validation is at runtime, once, at compile time: every field annotated `float` or `jax.typing.ArrayLike` (string annotations resolved with `typing.get_type_hints`; `dataclasses.fields` alone returns the string `'float'`), every free symbol has a field, otherwise raise. `float` is for single-configuration code (the exam notebook); `ArrayLike` is for code that batches: JAX transformations keep the wrapped function's signature, so `jax.vmap(f)(batch)` with `def f(q: float)` is a ty error, while a field and a parameter annotated `ArrayLike` accept floats and arrays and still reject `Joint(q1="a")` and `compiled(0.5)` (probed in ty 0.0.91). The quantity and the dataclass are linked only by names; a static link needs the schema rejected in D1.
 
 JAX is the only backend: `lambdify(..., modules="jax")` under `jax.jit`, with `jax_enable_x64`. Autodiff is part of the numeric path (whitelisted).
 
-Rejected: caller-ordered symbols `lambdify((q1, q2))`; sorted-name order (`"q10" < "q2"`); creation-order counters; runtime-generated parameter classes (`type(...)`, `make_dataclass`, metaclass: ty sees `Unknown`/`Any`); a `backend` parameter, `Backend(StrEnum)` and per-backend overloads (until a second backend exists); `Piecewise` branching inside compiled code.
+Because validation reads the annotations at runtime, the annotation's name must exist at runtime. ruff's `typing-only-third-party-import` (TC002) treats a bare `ArrayLike` in a dataclass field as typing-only and asks to move its import under `TYPE_CHECKING`, which would make `get_type_hints` fail; the tests and docs write `jax.typing.ArrayLike` through the runtime-used `jax` binding instead. (ruff's `runtime-evaluated-decorators = ["dataclasses.dataclass"]` would state this in configuration; not added, the qualified spelling needs no exception.)
+
+Rejected: `float` fields only (batched code is a ty error); `ArrayLike` fields only (the exam code would write `q1: ArrayLike` for one configuration); caller-ordered symbols `lambdify((q1, q2))`; sorted-name order (`"q10" < "q2"`); creation-order counters; runtime-generated parameter classes (`type(...)`, `make_dataclass`, metaclass: ty sees `Unknown`/`Any`); a `backend` parameter, `Backend(StrEnum)` and per-backend overloads (until a second backend exists); `Piecewise` branching inside compiled code.
 
 ### D12. Thin frame-carrying compiled result
 
@@ -263,15 +265,15 @@ Rejected: `R[0, 2]` for r₁₃ (an off-by-one on every transcription from a sol
 
 ### D27. No frame accessor on compiled results in this change
 
-`Numeric[T]` exposes `.components` only. The meaning is the type `T`; the runtime frame, kept in the pytree aux data (D12), appears in the printed form (`Numeric[Point[Base]]([1.0, 0.5, 0.0])`). Nothing in this change reads a compiled frame: simulation reads `.components`, the benchmark compares numbers.
+`Numeric[T]` exposes `.components`, and one self-gated accessor (D28): `valid[F](self: Numeric[AxisAngleSolutions[F]]) -> jax.Array`. The meaning is the type `T`; the runtime frame, kept in the pytree aux data (D12), appears in the printed form (`Numeric[Point[Base]]([1.0, 0.5, 0.0])`). Nothing in this change reads a compiled frame: simulation reads `.components`, the benchmark compares numbers.
 
 Additive path for a later change (probed in ty 0.0.91, one class, no new types): self-annotated methods offered only for the matching `T`, `frame[F](self: Numeric[Point[F]]) -> type[F]` and `relative_to[A, B](self: Numeric[Rotation[A, B]]) -> type[A]`; `scalar.frame()` and `rotation.frame()` are errors.
 
-Rejected: a plain `.frame` property (no single return type fits a point, a rotation and a scalar); per-concept result classes (reopens D18's single `Numeric[T]`); adding the gated accessors now (no reader in this change).
+Rejected: a plain `.frame` property (no single return type fits a point, a rotation and a scalar); per-concept result classes (reopens D18's single `Numeric[T]`); adding the frame accessors now (no reader in this change). The validity flag does have a reader (D28), so it takes the gated path; folding it into the components as a fifth float column was rejected (a boolean posing as a float, read by index).
 
 ### D28. Singular configurations surface as a compiled flag
 
-`ValidityCondition` is a `Symbolic` and compiles to a boolean of shape `()`, applying the tolerance of `to_axis_angle` (`|expression| > tolerance`, default `1e-9`) instead of `≠ 0`. `AxisAngleSolutions` is a `Symbolic` too; compiling it as a whole returns both solutions and the flag in one result, so on the main path the flag cannot be left out. When the flag is false the caller decides; nothing is substituted.
+`ValidityCondition` is a `Symbolic` and compiles to a boolean of shape `()`, applying the tolerance of `to_axis_angle` (`|expression| > tolerance`, default `1e-9`) instead of `≠ 0`. `AxisAngleSolutions` is a `Symbolic` too; compiling it as a whole returns both solutions and the flag in one result, so on the main path the flag cannot be left out: `.components` has shape `(2, 4)`, rows the first and second solution, columns r_x, r_y, r_z, θ; `.valid()` is the boolean flag of shape `()` (D27), a second pytree child. Every compiled result carries a flag child (true for quantities without a condition), so the accessor needs no runtime branch; only `Numeric[AxisAngleSolutions[F]]` exposes it. When the flag is false the caller decides; nothing is substituted.
 
 Probed, `Rz(q)` regular-case formulas compiled with JAX under `jit` (axis z component, angle, exact flag `sin θ ≠ 0`, tolerance flag `|sin θ| > 1e-9`):
 
