@@ -44,7 +44,7 @@
 
 ## 7. Acceptance: exam 2024-09-19
 
-- [ ] 7.1 Rewrite the cells of `exams/2024_09_19.ipynb` the new API can express and delete the cells that need `Manipulator`, DH or the Jacobian (design D15); verify the notebook runs top to bottom in the project kernel and the chained frames and wrist position match the values the legacy notebook produced at tag `legacy`
+- [x] 7.1 Rewrite the cells of `exams/2024_09_19.ipynb` the new API can express and delete the cells that need `Manipulator`, DH or the Jacobian (design D15); verify the notebook runs top to bottom in the project kernel and the chained frames and wrist position match the values the legacy notebook produced at tag `legacy`
 
 ## 8. Integration
 
