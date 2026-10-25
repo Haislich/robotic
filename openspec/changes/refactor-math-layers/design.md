@@ -100,7 +100,7 @@ Rejected: allowing `2 * p` (it came from a misread of "2 * vector").
 
 ### D8. Rotations and transforms carry both frames
 
-`Rotation[To, From]` is ^A R_B; `Transform[To, From]` is ^A T_B. Composition `@` chains inner frames; inverse swaps them. `Vector[F]` is an arrow resolved in F: changing the frame of resolution is symbolic only (rotation or transform applied to a vector or point); numbers come from compiling the resolution already chosen. `T @ point` is R p + t; `T @ vector` is R v.
+`Rotation[Target, Source]` is ^A R_B; `Transform[Target, Source]` is ^A T_B (names and order in D16). Composition `@` chains inner frames; inverse swaps them. `Vector[F]` is an arrow resolved in F: changing the frame of resolution is symbolic only (rotation or transform applied to a vector or point); numbers come from compiling the resolution already chosen. `T @ point` is R p + t; `T @ vector` is R v.
 
 Rejected: frames on vectors only; numeric frame changes on compiled results.
 
@@ -110,7 +110,7 @@ No function or constructor in the API solves a frame from two arguments. A frame
 
 Probed in ty 0.0.91 (with the stub's `to=` / `from_=` spelling, replaced by D16): invariance stops widening existing values, but inline values are built with an invented union. `Transform(Rotation.about_z(q, to=Base, from_=Link1), Link1.origin())` silently gives `Transform[Base | Link1, Link1]`, and applying it to a `Link1` point gives `Point[Base | Link1]`. The same happens with `Self` classmethods on frames (`Base.rotation_about_z(...)`) and with an inline invariant key `Key(Base)`. Receiver-first `Rotation.about_z(q, to=Base, from_=Link1).with_origin(Link1.origin())` reports "Expected `Point[Base]`, found `Point[Link1]`"; inline `@` with mismatched frames reports an error.
 
-Consequence: the stub's `Transform(rotation, origin)` constructor is replaced by a constructor taking the origin's components (D17) and, for an origin that is already a point, a method on the rotation, `with_origin` (D18).
+Consequence: the stub's `Transform(rotation, origin)` constructor is replaced by a transform built from its frames, whose parts are checked against them (D17).
 
 Rejected: fixing inline widening through variance alone (`Transform` is already invariant); pre-bound frame keys (`BASE = Key(Base)`) as the user's responsibility (only docs protect it).
 
@@ -127,6 +127,10 @@ Rejected: old-style `TypeVar` with explicit variance; characterization tests or 
 `lambdify[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]`, `Compiled.__call__(values: P) -> Numeric[Self]`. `P` is a user-written frozen dataclass (one for the whole robot, e.g. `Joints`). Fields are matched to symbols by name; ordering is internal; extra fields are allowed. Type hints survive, so `compiled(0.5)` and `Parameters()` with a missing field are type errors.
 
 Validation is at runtime, once, at compile time: every field annotated `float` or `jax.typing.ArrayLike` (string annotations resolved with `typing.get_type_hints`; `dataclasses.fields` alone returns the string `'float'`), every free symbol has a field, otherwise raise. `float` is for single-configuration code (the exam notebook); `ArrayLike` is for code that batches: JAX transformations keep the wrapped function's signature, so `jax.vmap(f)(batch)` with `def f(q: float)` is a ty error, while a field and a parameter annotated `ArrayLike` accept floats and arrays and still reject `Joint(q1="a")` and `compiled(0.5)` (probed in ty 0.0.91). The quantity and the dataclass are linked only by names; a static link needs the schema rejected in D1.
+
+`jax.vmap` is the only way to batch (D34). `ArrayLike` is the annotation that lets `vmap` type-check, not a promise that the compiled function takes arrays: every field value must be a scalar of shape `()`, which is what `vmap` hands in. A field holding an array raises `ParameterShapeError(ValueError)`, naming the field and pointing to `jax.vmap`. The check sits inside the traced kernel, where shapes are static, so it runs when JAX traces (once per input shape), not on each call. Found in review round 1: an array passed directly reached `jnp.stack`, which failed with "Cannot stack arrays with different numbers of dimensions" for any quantity with constant entries (every rotation and transform), because the constant entries stay of shape `()`.
+
+Rejected (review round 1): broadcasting the entries so a direct array call works (a second batching path beside `vmap`, and it needs rules for fields of different lengths, (N,) with (M,)); leaving the direct call unhandled (an internal stacking error for a user mistake).
 
 JAX is the only backend: `lambdify(..., modules="jax")` under `jax.jit`, with `jax_enable_x64`. Autodiff is part of the numeric path (whitelisted).
 
@@ -162,32 +166,47 @@ Raise when no answer exists (normalizing a zero vector, a free symbol without a 
 
 Rejected: keeping the out-of-scope cells non-runnable until their change lands (a notebook that does not run top to bottom is no benchmark).
 
-### D16. Frame keywords `of=` / `relative_to=`
+### D16. Frame keywords `target=` / `source=`
 
-Constructors that need frames their arguments cannot fix take them as keywords read from the course's sentence for ^A R_B, "the orientation of frame B relative to frame A": `Rotation.about_z(q1, of=Link1, relative_to=Base)` is `Rotation[Base, Link1]`; `Rotation.identity(of=Tool, relative_to=Wrist)`; `Rotation.about_axis(axis, q, of=Link1)`, where the axis's frame fixes the reference frame. Each frame is fixed by its own keyword, so D9 holds.
+^A R_B maps coordinates expressed in the source B to the target A. That mapping reading names the frame pair at every layer: type parameters `[Target, Source]`, attributes `_target` / `_source`, properties `.target` / `.source`, keywords `target=` / `source=`. Constructors that need frames their arguments cannot fix take them as keywords: `Rotation.about_z(q1, source=Link1, target=Base)` is `Rotation[Base, Link1]`; `Rotation.identity(source=Tool, target=Wrist)`; `Rotation.about_axis(axis, q, source=Link1)`, where the axis's frame fixes the target. Each frame is fixed by its own keyword, so D9 holds. Target comes first so the types read like the composition ^A R_B ^B R_C = ^A R_C: `Rotation[A, B] @ Rotation[B, C] -> Rotation[A, C]`. Points and vectors keep the "expressed in" reading (`Vector[F]`, `.frame`).
 
 Naming rule (user's): no name clashes with the language (keywords, soft keywords, builtins), and escaping a keyword with a trailing underscore counts as a clash. Builtin shadowing is already a ruff error (`A001`–`A005` under `ALL`); the escape is not caught by any rule today, so the separate ast-grep style-rule change bans identifiers ending in a single `_`.
 
-Probed in ty 0.0.91, bound and inline: `assert_type(Rotation.about_z(0.5, of=Link1, relative_to=Base), Rotation[Base, Link1])` and the `with_origin(Base.origin())` result as `Transform[Base, Link1]` pass; `...with_origin(Link1.origin())` is an error both inline and bound ("Expected `Point[Base]`, found `Point[Link1]`").
+Probed in ty 0.0.91 (with the earlier `of=` / `relative_to=` spelling; keywords bind the same way), bound and inline: `assert_type(Rotation.about_z(0.5, of=Link1, relative_to=Base), Rotation[Base, Link1])` passes, and a receiver-first method taking a point of the target frame reports an inline `Link1` point ("Expected `Point[Base]`, found `Point[Link1]`").
 
-Rejected: `to=` / `from_=` (the stub's spelling; `from_` escapes the keyword `from`); a builder from the frames, `Link1.relative_to(Base).about_z(q1)` (passes the same probes, but adds an intermediate class whose only job is to carry two frames).
+Rejected:
+- `of=` / `relative_to=` (the course's orientation sentence, "the orientation of B relative to A"; mixed with mapping-named type parameters `To` / `From`, it gave one frame pair five vocabularies: A/B, `To`/`From`, `relative_to`/`of`, `_target`/`_source`, `T`/`S`).
+- `relative_to` / `of` at every layer (loses the mapping reading, which is how the user reads a rotation).
+- `[Source, Target]` order (reads source to target, but composition types read backwards against ^A R_B: `Rotation[B, A] @ Rotation[C, B] -> Rotation[C, A]`).
+- `to=` / `from_=` (the stub's spelling; `from_` escapes the keyword `from`).
+- A builder from the frames, `Link1.relative_to(Base).about_z(q1)` (adds an intermediate class whose only job is to carry two frames).
 
-### D17. Transform constructor takes the origin's components
+### D17. A transform is built from its frames
 
-`Transform(rotation: Rotation[To, From], x: ScalarLike, y: ScalarLike, z: ScalarLike)`: the origin's components are read in the rotation's target frame, so both frames come from the rotation alone and D9 holds, inline included. It reads like the exam's [R | t] with t written as numbers, and like `Frame.point(x, y, z)`: one source for the frame, numbers read in it. An origin that is already a point goes through `rotation.with_origin(point)`, which checks the point's frame.
+`Transform(*, target: type[Target], source: type[Source])` is the identity transform between the two frames. `.with_rotation(rotation: Rotation[Target, Source])` and `.with_translation(translation: Vector[Target])` each return a new transform with that part replaced; the frames never change:
 
-Python has no private constructors, so the public `__init__` must itself satisfy D9; the stub hid this by declaring none.
+```python
+Transform(target=Base, source=Link1)
+    .with_rotation(Rotation.about_z(q1, source=Link1, target=Base))
+    .with_translation(Base.vector(0, 0, d1))
+```
 
-Probed in ty 0.0.91 with `Point` and `Rotation` invariant, bound and inline:
-- `__init__(self, rotation: Rotation[To, From], origin: Point[To])`: inline silent (`Transform[Base | Link1, Link1]`), bound caught.
-- Self-typed `__init__[T, S](self: Transform[T, S], rotation: Rotation[T, S], origin: Point[T])`: same as above.
-- Components: `assert_type(Transform(Rotation.about_z(0.5, of=Link1, relative_to=Base), 0, 0, 1), Transform[Base, Link1])` passes; `Transform(Rotation.about_z(...), Link1.origin())` is an error.
+The frames are written although the parts repeat them. User's reason: it states what the rotation and the translation are about, and the frames cannot change after construction. The receiver fixes both frames, so D9 holds inline. The translation is ^A p, the origin of B expressed in A: a vector, so `T @ point` is point + vector (D7).
 
-A first probe run showed all three shapes silent because the probe classes were covariant; the result above is with invariance added.
+Python has no private constructors, so the public `__init__` must itself satisfy D9; the keywords fix one frame each.
 
-Rejected: the naive and the self-typed constructors (both reopen hole 1 inline).
+Probed in ty 0.0.91 with `Point`, `Vector` and `Rotation` invariant:
+- `__init__(self, rotation: Rotation[To, From], origin: Point[To])` and the self-typed variant: inline silent (`Transform[Base | Link1, Link1]`), bound caught.
+- `__init__(self, rotation: Rotation[Target, Source], translation: Vector[Target])` (re-probed in review round 1): inline infers `Transform[Base | Link1, Link1]`; the mistake surfaces only at an annotation, explicit `Transform[Base, Link1](...)`, or the first operation with a `Base` value.
+- Receiver-first methods: an inline wrong-frame argument is an error (D16).
 
-Accepted limit: numbers taken from a point in another frame (`Transform(R, p.x, p.y, p.z)`) pass silently, the same limit as `Frame.point(p.x, p.y, p.z)`; plain numbers carry no frame.
+Rejected:
+- `Transform(rotation, x, y, z)` (the earlier decision: safe, but a transform is built from parts, not coordinates).
+- `Transform(rotation, translation)` (no redundancy, but the inline hole above; a known miss in place of a type error).
+- `rotation.with_translation(v)` / `rotation.with_origin(p)` (reads as applying a translation to a rotation).
+- `vector.homogeneous().with_rotation(R)` (the intermediate value has no source frame, so it needs its own class; the homogeneous form of a vector is [v; 0], not a transform).
+- Copying the rotation constructors onto the builder (`Transform(...).about_z(q)`): two spellings of every rotation (D34).
+- A mutating builder (`self._rotation = ...; return self`): two names for one transform would change together.
 
 ### D18. Names
 
@@ -203,21 +222,23 @@ Rule (user's, D16): no clash with the language; a keyword escape counts as a cla
 | `AxisAngle[F]` | one axis-angle representation: `.axis`, `.angle` | `AxisRotation` (the stub's name for it: reads as a rotation object, confusable with `Rotation.about_axis`); in the stub `AxisAngle` named the outer result, which is not an axis-angle |
 | `AxisAngleSolutions[F]` | the result of `to_axis_angle()`: `.first`, `.second`, `.valid_when`; the course's "two solutions"; a `Symbolic`, so it compiles as a whole (D28) | `AxisAnglePair` (says how many, not why; invites tuple unpacking) |
 | `ValidityCondition` | a symbolic statement over the variables, true where a result is valid ("valid when sin q ≠ 0"); renders LaTeX; a `Symbolic` that compiles to a flag (D28) | `Condition` (`threading`, `asyncio`, `multiprocessing`), `Predicate` (`sympy.Predicate`), `Constraint` (something imposed, as in optimization), `Guard` (programming jargon) |
-| `Rotation.with_origin(origin: Point[To]) -> Transform[To, From]` | the checked path from a rotation and an origin point to a transform (D17); pairs with `Transform.origin`: `R.with_origin(p).rotation` is `R`, `.origin` is `p`. Accepted: Python's `with_*` methods usually return the same type (`Path.with_suffix`); a rotation has no origin, so "a rotation with an origin" can only be a pose | `placed_at` (breaks the pairing with `.origin`; vaguer about which part is set), `with_translation` (a translation is a vector, w = 0; the argument is a point, D7) |
+| `Transform.with_rotation`, `Transform.with_translation` | the builder steps of D17; each pairs with its property (`T.with_rotation(R).rotation` is `R`) and returns the same type, as `Path.with_suffix` does | `Rotation.with_origin(origin: Point[To])` (the earlier name: reads as giving a rotation an origin; replaced with D17), `placed_at` (vague about which part is set) |
+| `target`, `source` | the frames of a rotation or transform, in the mapping reading (D16) | `relative_to` / `of`, `To` / `From` (D16) |
+| `Frame.notation` | how the course writes the frame, e.g. `0` or `3'` (D19) | see D19 |
 
 `Symbolic` here is not the rejected two-worlds scalar of D1: there is one symbolic base and one compiled result type, no `S` parameter and no gated methods.
 
-### D19. A frame's LaTeX name is a class keyword
+### D19. A frame's notation is a class keyword
 
-`class Base(Frame, latex="0")` renders `{}^{0}`; without the keyword the class name is used (`class Tool(Frame)` renders `{}^{Tool}`). Implemented with `__init_subclass__(cls, *, latex: str | None = None)` storing a `ClassVar[str]`. Reason: the exam numbers its frames (^0 R_1, ^3 T_6) and a class cannot be named `0`.
+`class Base(Frame, notation="0")` renders `{}^{0}`; without the keyword the class name is used (`class Tool(Frame)` renders `{}^{Tool}`). Implemented with `__init_subclass__(cls, *, notation: str | None = None)` storing `Frame.notation: ClassVar[str]`. Reason: the exam numbers its frames (^0 R_1, ^3 T_6) and a class cannot be named `0`.
 
-Probed in ty 0.0.91 and at runtime: `class Typo(Frame, latx="1")` is a ty `unknown-argument` error and a runtime `TypeError` ("Did you mean 'latex'?"); `latex=1` is a ty error (expected `str | None`).
+Probed in ty 0.0.91 and at runtime (with the earlier keyword `latex`): a misspelled keyword is a ty `unknown-argument` error and a runtime `TypeError`; a non-string value is a ty error (expected `str | None`).
 
-Rejected: a class attribute `latex = "0"` (a misspelled attribute passes ty silently and the class name is printed); the keyword `symbol` (collides in meaning with `Scalar.symbol`, which creates a variable); the keyword `name` (reads as the Python name); always the class name (cannot express numbered frames).
+Rejected: the keyword `latex` (the earlier name: a string on frames, while `latex()` is the render method on every quantity, so `rotation.target.latex()` failed and `point.latex` returned a bound method); `label` and `name` (both already used in `symbolic.py`; `name` also reads as the Python name); a class attribute `notation = "0"` (a misspelled attribute passes ty silently and the class name is printed); the keyword `symbol` (collides in meaning with `Scalar.symbol`, which creates a variable); always the class name (cannot express numbered frames).
 
 ### D20. Unit vectors come only from normalization
 
-`UnitVector(direction: Vector[F])` normalizes its argument: it divides the components by the simplified norm and raises when the norm simplifies to zero (D14). `v.normalize()` is `UnitVector(v)`. As with D17, Python has no private constructors, so the public constructor itself guarantees the invariant: no `UnitVector` can hold components not divided by their own norm, and no length check exists.
+`UnitVector(direction: Vector[F])` normalizes its argument: it divides the components by the simplified norm and raises when the norm simplifies to zero (D14). `v.normalize()` is the spelling (D34); it calls `UnitVector(v)`. As with D30, Python has no private constructors, so the public constructor itself guarantees the invariant: no `UnitVector` can hold components not divided by their own norm, and no length check exists.
 
 Probed with sympy 1.14, norm simplified first: (cos q, sin q, 0) stays (cos(q), sin(q), 0); (1, 1, 0) gives (sqrt(2)/2, sqrt(2)/2, 0); (3, 4, 0) gives (3/5, 4/5, 0); (q, 0, 0) gives (q/Abs(q), 0, 0). Without simplifying the norm the first prints `cos(q)/sqrt(sin(q)**2 + cos(q)**2)`.
 
@@ -239,7 +260,7 @@ Rejected: `.rotate(v)` (the active reading, the arrow moves, contradicts D8's pa
 
 ### D23. A rotation does not act on points
 
-`Rotation @ Point` is a type error: a rotation relates axes and says nothing about origins, so with offset origins the result would have the right type and the wrong value (identity rotation, origin of B at (5, 0, 0) in A: the tip (1, 0, 0) in B is (6, 0, 0) in A, not (1, 0, 0)). The two honest readings stay explicit: `Transform(R, 0, 0, 0) @ p` writes the coincident-origin assumption down; `R @ (p - B.origin())` resolves the grounded vector (D7). Probed in ty 0.0.91: both infer `Point[Base]` and `Vector[Base]`; `R @ tip` is an error.
+`Rotation @ Point` is a type error: a rotation relates axes and says nothing about origins, so with offset origins the result would have the right type and the wrong value (identity rotation, origin of B at (5, 0, 0) in A: the tip (1, 0, 0) in B is (6, 0, 0) in A, not (1, 0, 0)). The two honest readings stay explicit: `Transform(target=Base, source=Tool).with_rotation(R) @ p` writes the coincident-origin assumption down; `R @ (p - B.origin())` resolves the grounded vector (D7). Probed in ty 0.0.91: both infer `Point[Base]` and `Vector[Base]`; `R @ tip` is an error.
 
 Rejected: allowing it under an implicit coincident-origin assumption.
 
@@ -251,7 +272,7 @@ Rejected: Euler and RPY in this change (enlarges it with a design the benchmark 
 
 ### D25. Intermediate frames are declared by the user
 
-A frame a product of elementary rotations passes through is an ordinary frame the user declares, named with D19 as the course writes it (`class Prime(Frame, latex="'")`, RF', RF''). Probed in ty 0.0.91: `first @ second @ third` through `Prime` and `Second` infers `Rotation[Base, Tool]`; skipping a factor (`first @ third`) is an error.
+A frame a product of elementary rotations passes through is an ordinary frame the user declares, named with D19 as the course writes it (`class Prime(Frame, notation="'")`, RF', RF''). Probed in ty 0.0.91: `first @ second @ third` through `Prime` and `Second` infers `Rotation[Base, Tool]`; skipping a factor (`first @ third`) is an error.
 
 Rejected: library-provided anonymous frames (ty cannot create a fresh type per call, so every intermediate frame would share one class and a chain that skips or swaps them would type-check).
 
@@ -267,7 +288,7 @@ Rejected: `R[0, 2]` for r₁₃ (an off-by-one on every transcription from a sol
 
 `Numeric[T]` exposes `.components`, and one self-gated accessor (D28): `valid[F](self: Numeric[AxisAngleSolutions[F]]) -> jax.Array`. The meaning is the type `T`; the runtime frame, kept in the pytree aux data (D12), appears in the printed form (`Numeric[Point[Base]]([1.0, 0.5, 0.0])`). Nothing in this change reads a compiled frame: simulation reads `.components`, the benchmark compares numbers.
 
-Additive path for a later change (probed in ty 0.0.91, one class, no new types): self-annotated methods offered only for the matching `T`, `frame[F](self: Numeric[Point[F]]) -> type[F]` and `relative_to[A, B](self: Numeric[Rotation[A, B]]) -> type[A]`; `scalar.frame()` and `rotation.frame()` are errors.
+Additive path for a later change (probed in ty 0.0.91, one class, no new types): self-annotated methods offered only for the matching `T`, `frame[F](self: Numeric[Point[F]]) -> type[F]` and `target[A, B](self: Numeric[Rotation[A, B]]) -> type[A]`; `scalar.frame()` and `rotation.frame()` are errors.
 
 Rejected: a plain `.frame` property (no single return type fits a point, a rotation and a scalar); per-concept result classes (reopens D18's single `Numeric[T]`); adding the frame accessors now (no reader in this change). The validity flag does have a reader (D28), so it takes the gated path; folding it into the components as a fifth float column was rejected (a boolean posing as a float, read by index).
 
@@ -291,13 +312,13 @@ Rejected: an exact `≠ 0` flag (the two misses above); `Piecewise` branching in
 
 ### D29. One boundary module
 
-`src/robotic/symbolic.py` holds `Symbolic`, `Scalar`, `Symbol`, `ScalarLike`, `Compiled` and `Numeric`; it is the only module importing sympy and calling `sympy.lambdify`. `geometry.py` (frames, points, vectors), `rotation.py` (rotations, their storage, axis-angle) and `transform.py` build on the public `Scalar` API only. `transform.py` imports `Rotation` for annotations only, so `Rotation.with_origin` can construct a `Transform` without an import cycle.
+`src/robotic/symbolic.py` holds `Symbolic`, `Scalar`, `Symbol`, `ScalarLike`, `Compiled` and `Numeric`; it is the only module importing sympy and calling `sympy.lambdify`. `geometry.py` (frames, points, vectors), `rotation.py` (rotations, their storage, axis-angle) and `transform.py` build on the public `Scalar` API only. `transform.py` imports `rotation.py` (a transform starts from `Rotation.identity`, D17); `rotation.py` does not import `transform.py`.
 
 Rejected: a separate boundary module per concern (scalar, matrix, compilation): every pair would need private access across modules; public accessors for raw entries (a "give me your sympy" method on every quantity) or a `Compiled` constructor taking pre-built parts (an explicit specialization could then attach any frame type to any numbers, against D20's principle that the public constructor guarantees the invariant).
 
 ### D30. Points and vectors have a public frame-taking constructor
 
-`Point(frame, x, y, z)` and `Vector(frame, x, y, z)` exist because Python has no private constructors (as in D17 and D20); `Tool.point(...)` and `Tool.vector(...)` call them and stay the documented spelling. The frame has one source, the `frame` argument, so D9 holds: `Point(Tool, 1, 0, 0)` infers `Point[Tool]`.
+`Point(x, y, z, frame)` and `Vector(x, y, z, frame)` exist because Python has no private constructors (as in D17 and D20); `Tool.point(...)` and `Tool.vector(...)` call them and stay the spelling (D34). The frame comes last: the numbers, then the frame they are read in. It has one source, the `frame` argument, so D9 holds: `Point(1, 0, 0, Tool)` infers `Point[Tool]`.
 
 The `Point3(Tool, ...)` rejection (D6) stands as an API choice: docs and examples use the frame methods only.
 
@@ -309,7 +330,7 @@ Rejected: building points through hidden attribute assignment after `object.__ne
 - `Symbol(name)` is the constructor `Scalar.symbol(name)` calls, with the same fixed assumption (real). It exists because `Symbol` inherits `Scalar(value)`, which would otherwise let `Symbol(3)` wrap a constant typed as a symbol; one assumption set keeps D4's guarantee.
 - `Scalar.is_zero() -> bool`: true only when simplification proves the scalar identically zero. The layers outside the boundary need it for D20 (zero norm raises) and for the singular cases of axis-angle (D13); it is the only three-valued sympy question exposed, collapsed to "proved zero".
 - Reverse operators take `float` (ruff PYI041: `int | float` is redundant); `int` is still accepted by the type checker and stays exact at runtime. `ScalarLike` keeps `Scalar | int | float` as the documented alias.
-- Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols.
+- Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols. `ParameterShapeError(ValueError)` is raised at trace time for a field holding an array outside `vmap` (D11).
 
 Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above).
 
@@ -322,14 +343,28 @@ Rejected: executing extracted code blocks with `exec` (ruff S102, and outputs un
 
 ### D33. Rotation and transform construction
 
-- `Rotation(axis, angle, *, of)` is the public constructor: the rotation about a unit axis by Rodrigues' formula, which `about_axis` calls. Like D20, the public constructor itself keeps the invariant, so no public path builds a `Rotation` from nine arbitrary entries. Elementary rotations, the identity, products, inverses and simplification build the internal storage (D21) through a private factory of the class (`object.__new__`, attributes set on the fresh instance before it is returned).
-- `Rotation.relative_to` and `Rotation.of` expose the two frames, named after the D16 keywords; `Transform` needs them for its origin and LaTeX.
-- `Transform` stores its rotation and origin only (D21); `entry(row, column)` reads the 4x4 matrix from them, composition is `(R1 @ R2).with_origin(T1 @ o2)`, the action on a point is `o + R @ (p - O_B)`, the inverse `R^T.with_origin(O_B - R^T (o - O_A))`.
+- `Rotation(axis, angle, *, source)` is the public constructor: the rotation about a unit axis by Rodrigues' formula, which `about_axis` calls. Like D20, the public constructor itself keeps the invariant, so no public path builds a `Rotation` from nine arbitrary entries. Elementary rotations, the identity, products, inverses and simplification build the internal storage (D21) through one private factory of the class (`object.__new__`, attributes set on the fresh instance before it is returned); no method repeats its body.
+- `Rotation.target` and `Rotation.source` expose the two frames, named after the D16 keywords; `Transform` needs them for its LaTeX.
+- `Transform` stores its rotation and translation only (D21); `entry(row, column)` reads the 4x4 matrix from them. Composition is (R₁R₂, t₁ + R₁t₂), the action on a point is R p + t (as `A.origin() + t + R @ (p - B.origin())`), the inverse is (Rᵀ, −Rᵀt).
 - `Point` is `@final`. Points and vectors share a private storage base, so ty considered a class that is both; `final` rules it out and narrows `Point | Vector` in `match`.
 - `AxisAngle[F]` is a frozen dataclass with `axis` and `angle`; it is not `Symbolic` (the stub's choice): its axis and angle compile on their own (D13).
-- The skew-part axis of the regular case is `UnitVector(skew)`, so the normalization of D20 gives `sin(q)/Abs(sin(q))` for `Rz(q)` directly; the half-turn axis is the normalized column of R + I whose diagonal entry does not simplify to zero (column `k` of R + I is 2 r r_k). The structural singular cases (identity, half turn) are exact and valid everywhere: their `ValidityCondition` is `1 != 0`. A skew part that simplifies to zero with a trace proving neither case raises (D14: no answer can be given).
+- The skew-part axis of the regular case is `skew.normalize()`, so the normalization of D20 gives `sin(q)/Abs(sin(q))` for `Rz(q)` directly; the second solution is `(-first.axis, -first.angle)`, as the course writes it, with `UnitVector.__neg__` returning a `UnitVector` (negation keeps unit length, so nothing is normalized twice).
+- The half-turn axis is the normalized column k of R + I whose diagonal entry does not simplify to zero. Column k is 2 r r_k and r_kk + 1 = 2 r_k², so the column vanishes exactly where r_kk + 1 = 0: the half turn's `ValidityCondition` is `r_kk + 1 != 0` for the chosen k. Only the identity is valid everywhere (`1 != 0`). A skew part that simplifies to zero with a trace proving neither case raises (D14: no answer can be given).
+- `AxisAngleSolutions` compiles its condition through the condition's own layout; the layout of a `ValidityCondition` is defined once.
+
+Rejected (review round 1): the half turn as valid everywhere (`1 != 0`, the earlier text): with the axis (a, 1, 0) normalized and the angle π, column 1 is chosen because r₁₁ + 1 = 2a²/(a² + 1) is not identically zero, and compiled at a = 0 the axis is NaN while `valid()` is true.
 
 Rejected: a public constructor from entries (a matrix that is not a rotation would type as one); a public `_Matrix3`-taking constructor (the same hole behind a private type); rotations storing their frames only as phantom types (D6).
+
+### D34. One public spelling per concept
+
+Each concept has exactly one spelling in docs, tests, notebooks and library code outside its own module:
+- The constructor, when the arguments are the concept's parts or frames: `Transform(target=Base, source=Link1)` (D17).
+- A factory or method, when it adds meaning the arguments do not carry: `Base.point(x, y, z)` (numbers read in a frame), `Rotation.about_axis(axis, q, source=...)` (names the construction), `v.normalize()` (an operation on `v`), `Scalar.symbol("q")`.
+
+Public constructors that exist only because Python has no private ones (`Point(...)`, `Vector(...)`, `UnitVector(v)`, `Symbol(name)`, `Rotation(axis, angle, source=...)`) are called only by the spelling they serve; elsewhere the class name is a type, used in annotations and `match`. The classes stay exported for that reason.
+
+Rejected: a factory for everything (a transform's parts are already its arguments; `with_origin` duplicated the constructor); a builder pattern for every type (only `Transform` is assembled from framed parts, D17); leaving both spellings in use (a learner sees the same math written two ways and must check that they are equivalent).
 
 ## Risks / Trade-offs
 

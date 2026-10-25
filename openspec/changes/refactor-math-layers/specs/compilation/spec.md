@@ -57,6 +57,17 @@ A compiled function and its result SHALL work under `jax.jit`, `jax.vmap` and `j
 - **WHEN** a compiled vector is mapped with `vmap` over 2 configurations
 - **THEN** the components have shape `(2, 3)` and the frame is unchanged
 
+### Requirement: Batching is through vmap
+Every field value SHALL be a scalar of shape `()`; a field holding an array SHALL raise an error that names the field and points to `jax.vmap`, checked when JAX traces, not on each call.
+
+#### Scenario: Array passed directly
+- **WHEN** a compiled rotation is called with a dataclass whose `ArrayLike` field holds an array of shape `(2,)`
+- **THEN** an error naming the field is raised
+
+#### Scenario: Array batched with vmap
+- **WHEN** the same call is mapped with `jax.vmap` over that array
+- **THEN** the components have shape `(2, 3, 3)`
+
 #### Scenario: Gradient
 - **WHEN** `grad` is taken of the x component of the compiled vector (sin(q), 0, 0) with respect to `q` at `q = 0.5`
 - **THEN** the result is cos(0.5) = 0.8775825618903728

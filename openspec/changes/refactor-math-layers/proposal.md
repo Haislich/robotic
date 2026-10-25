@@ -10,8 +10,8 @@ The legacy library (`src/robotic/transformations.py`, `manipulator.py`, `utils.p
 - **BREAKING**: delete the five midterm notebooks (`midterms/midterm_2020-11-20.ipynb` ... `midterm_2024-11-22.ipynb`); keep `exams/2024_09_19.ipynb` as the running example.
 - New scalar layer: a typed class wrapping sympy expressions. sympy is the only algebra; no public signature takes or returns a sympy type, and sympy imports are banned outside the boundary modules.
 - New geometry layer: frames as types; points and vectors resolved in a frame, with affine arithmetic enforced by the type checker.
-- New rotation layer: `Rotation[To, From]`, composition, inverse, elementary rotations, action on vectors, symbolic axis-angle extraction following the course convention.
-- New transform layer: `Transform[To, From]`, composition, inverse, action on points and vectors.
+- New rotation layer: `Rotation[Target, Source]`, composition, inverse, elementary rotations, action on vectors, symbolic axis-angle extraction following the course convention.
+- New transform layer: `Transform[Target, Source]` built from its two frames, composition, inverse, action on points and vectors.
 - New compilation layer: any quantity compiles through `lambdify` to a JAX function of a user-written parameters dataclass, returning a thin result that keeps the frame in its type.
 - Negative type test: a fixture of mistakes that must each be a ty error, run by pytest, gating ty upgrades.
 - Drop dependencies `loguru`, `pandas`, `pandas-stubs`, `matplotlib`.

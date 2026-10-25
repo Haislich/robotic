@@ -51,6 +51,22 @@
 - [x] 8.1 Update `README.md` to describe the new library (no Jacobians or manipulator until their change); verify every documented command runs as written
 - [x] 8.2 Verify the whole change together: `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest` (negative type test included) all pass, `openspec validate refactor-math-layers --strict` passes, and `git status` lists only the files named in the proposal's Impact section
 
+## 9. Review round 1
+
+Completed tasks 3.3, 4.1 and 5.1 are superseded where they name `latex=`, `of=` / `relative_to=`, the three-number constructor or `with_origin`; this section redoes those parts.
+
+- [ ] 9.1 Rename the frame vocabulary to Target/Source in `src/`, tests, docs, the negative fixture and the notebook (design D16); verify `rg -nw "relative_to|To|From" src tests docs` and `rg -n "\bof=" src tests docs` find no API use, and the inline wrong-frame lines of the negative fixture are still errors
+- [ ] 9.2 Rename `Frame.latex` to `Frame.notation` (design D19); verify the "Declared notation" and "Misspelled declaration" scenarios, and `rg -n 'latex="' src tests docs` finds nothing
+- [ ] 9.3 Put the frame last in `Point(x, y, z, frame)` and `Vector(x, y, z, frame)` (design D30); verify ty and the geometry tests pass
+- [ ] 9.4 Build transforms from their frames: `Transform(target=, source=)`, `with_rotation`, `with_translation`, `.translation`; remove the three-number constructor and `Rotation.with_origin`; composition, inverse and action through the translation; `rotation.py` no longer imports `transform.py` (design D17, D29, D33); verify the transform spec scenarios (identity, immutability, both inline wrong-frame lines added to the negative fixture) and the spatialmath oracle tests
+- [ ] 9.5 One spelling per concept (design D34): `UnitVector(...)` outside `geometry.py` becomes `.normalize()`, `Symbol(...)` outside `symbolic.py` becomes `Scalar.symbol(...)`; verify with `rg` that neither constructor is called outside its module
+- [ ] 9.6 Fix the half-turn validity condition to `r_kk + 1 != 0` (design D33); verify the new scenario fails first, then passes (axis (a, 1, 0) normalized, angle π, flag false at a = 0)
+- [ ] 9.7 Axis-angle cleanups (design D33): `UnitVector.__neg__` returns a `UnitVector`, the second solution is `-first.axis`, the norm is simplified once; `AxisAngleSolutions` compiles its condition through the condition's layout; `Rotation.simplify` uses the private factory; verify the axis-angle tests pass and `assert_type(-axis, UnitVector[F])` is clean
+- [ ] 9.8 Batching through vmap (design D11, D31): `ParameterShapeError` raised at trace time; correct the "floats and arrays alike" sentence in `docs/compilation.md`; verify both new scenarios, the direct-array one failing first
+- [ ] 9.9 Update every `docs/` page and `README.md` to the new spellings; verify `tests/test_docs.py` passes
+- [ ] 9.10 Rewrite `exams/2024_09_19.ipynb` against the new API, give `Frame3Down` a notation distinct from `Joint3`'s `3'`, and remove the dead `r_3_downward` derivation (user approves the notation and the removal); verify the notebook runs top to bottom with the same values as before
+- [ ] 9.11 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.

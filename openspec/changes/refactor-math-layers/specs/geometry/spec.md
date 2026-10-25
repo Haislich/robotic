@@ -90,20 +90,20 @@ Normalizing a vector whose components simplify to zero SHALL raise an error, bec
 - **THEN** an error is raised
 
 ### Requirement: Simplification and LaTeX for points and vectors
-A point or vector SHALL provide simplification returning the same type in the same frame, and a LaTeX rendering that names its frame by the LaTeX name declared with the frame, or by the frame's class name when none is declared.
+A point or vector SHALL provide simplification returning the same type in the same frame, and a LaTeX rendering that names its frame by the notation declared with the frame, or by the frame's class name when none is declared.
 
 #### Scenario: Simplify keeps the frame
 - **WHEN** the code simplifies a vector in `Base`
 - **THEN** the type checker infers a vector in `Base`
 
 #### Scenario: Default name
-- **WHEN** `Tool` is declared without a LaTeX name and the code renders a vector in `Tool` as LaTeX
+- **WHEN** `Tool` is declared without a notation and the code renders a vector in `Tool` as LaTeX
 - **THEN** the string contains `{}^{Tool}`
 
-#### Scenario: Declared name
-- **WHEN** `Base` is declared with the LaTeX name `0` and the code renders a vector in `Base` as LaTeX
+#### Scenario: Declared notation
+- **WHEN** `Base` is declared with the notation `0` and the code renders a vector in `Base` as LaTeX
 - **THEN** the string contains `{}^{0}`
 
 #### Scenario: Misspelled declaration
-- **WHEN** a frame is declared with a misspelled LaTeX-name keyword
+- **WHEN** a frame is declared with a misspelled notation keyword
 - **THEN** the type checker reports an error

@@ -100,6 +100,10 @@ For a rotation by π, the two solutions SHALL be (r, π) and (−r, π).
 - **WHEN** the code extracts axis-angle from the rotation about x by π
 - **THEN** the solutions are axis (1, 0, 0) with angle π and axis (−1, 0, 0) with angle π
 
+#### Scenario: Half turn about a symbolic axis is valid only where its axis exists
+- **WHEN** the code extracts axis-angle from the rotation by π about the normalized vector (a, 1, 0)
+- **THEN** the validity condition is not identically true, and compiled at a = 0 the flag is false
+
 ### Requirement: Identity gives a free axis
 For the identity rotation, the two solutions SHALL be (a, 0) and (−a, 0), where a is a free axis that is a unit vector, z unless the caller chooses another.
 

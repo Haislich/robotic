@@ -6,26 +6,34 @@ Models homogeneous transformations between frames, written ^A T_B, so that forwa
 
 ## ADDED Requirements
 
-### Requirement: A transform is a rotation and an origin
-A transform ^A T_B SHALL consist of the rotation ^A R_B and the origin of B as a point in A, SHALL carry both frames in its type, and SHALL expose its rotation, its origin and the sixteen entries of its 4x4 homogeneous matrix as scalars.
+### Requirement: A transform is a rotation and a translation between two frames
+A transform ^A T_B SHALL carry both frames in its type, SHALL consist of the rotation ^A R_B and the translation ^A p (the origin of B expressed in A, a vector in A), and SHALL expose its rotation, its translation and the sixteen entries of its 4x4 homogeneous matrix as scalars.
 
 #### Scenario: Matrix layout
-- **WHEN** the code builds the transform from `Link1` to `Base` with rotation about z by `q1` and origin (0, 0, d1) in `Base`
+- **WHEN** the code builds the transform from `Link1` to `Base` with rotation about z by `q1` and translation (0, 0, d1) in `Base`
 - **THEN** its entries are `[[cos(q1), -sin(q1), 0, 0], [sin(q1), cos(q1), 0, 0], [0, 0, 1, d1], [0, 0, 0, 1]]`
 
 #### Scenario: Reading the translation from the entries
-- **WHEN** the code reads row 3, column 4 of the transform with origin (0, 0, d1)
+- **WHEN** the code reads row 3, column 4 of the transform with translation (0, 0, d1)
 - **THEN** the result is the scalar `d1`
 
-### Requirement: The origin is checked against the rotation
-Building a transform SHALL fix both frames from the rotation, and an origin that is not a point in the rotation's target frame SHALL be a type error, also when written inline.
+### Requirement: A transform is built from its frames
+Building a transform SHALL start from its target and source frames, giving the identity between them; setting its rotation or translation SHALL return a new transform with the same frames, and a rotation not from the source to the target, or a translation not in the target, SHALL be a type error, also when written inline.
 
-#### Scenario: Building from a rotation and three numbers
-- **WHEN** the code builds a transform from the rotation from `Link1` to `Base` and the numbers (0, 0, d1)
-- **THEN** the type checker infers a transform from `Link1` to `Base`, and its origin is the point (0, 0, d1) in `Base`
+#### Scenario: Identity between two frames
+- **WHEN** the code builds the transform from `Link1` to `Base` without setting any part
+- **THEN** the type checker infers a transform from `Link1` to `Base`, and its entries are those of the 4x4 identity
 
-#### Scenario: Origin in the wrong frame, inline
-- **WHEN** the code builds a transform from the rotation from `Link1` to `Base` and, inline, the origin of `Link1`
+#### Scenario: Setting a part returns a new transform
+- **WHEN** the code sets the translation of a transform `t` and binds the result to `u`
+- **THEN** `t` is unchanged and `u` has the new translation and the same frames
+
+#### Scenario: Rotation in the wrong frames, inline
+- **WHEN** the code sets, inline, a rotation from `Tool` to `Base` on the transform from `Link1` to `Base`
+- **THEN** the type checker reports an error
+
+#### Scenario: Translation in the wrong frame, inline
+- **WHEN** the code sets, inline, a vector in `Link1` as the translation of the transform from `Link1` to `Base`
 - **THEN** the type checker reports an error
 
 ### Requirement: Transform composition
@@ -40,7 +48,7 @@ Composing ^A T_B with ^B T_C SHALL give ^A T_C, and composing transforms whose i
 - **THEN** the type checker reports an error
 
 ### Requirement: Transform inverse
-The inverse of ^A T_B SHALL be ^B T_A, with rotation Rᵀ and origin −Rᵀ t.
+The inverse of ^A T_B SHALL be ^B T_A, with rotation Rᵀ and translation −Rᵀ t.
 
 #### Scenario: Inverse composes to identity
 - **WHEN** the code composes a transform with its inverse and simplifies
@@ -57,7 +65,7 @@ Applying ^A T_B to a point in B SHALL give R p + t as a point in A.
 Applying ^A T_B to a vector in B SHALL give R v as a vector in A.
 
 #### Scenario: Translation does not move a vector
-- **WHEN** a transform with identity rotation and origin (5, 0, 0) is applied to the vector (1, 0, 0)
+- **WHEN** a transform with identity rotation and translation (5, 0, 0) is applied to the vector (1, 0, 0)
 - **THEN** the result is the vector (1, 0, 0)
 
 ### Requirement: Wrong source frame is a type error

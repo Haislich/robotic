@@ -1,8 +1,8 @@
 # Rotations
 
-## ^A R_B
+## ${}^A R_B$
 
-^A R_B is the orientation of frame B relative to frame A. Its columns are the axes of
+${}^A R_B$ is the orientation of frame B relative to frame A. Its columns are the axes of
 B resolved in A, and it changes the frame an arrow is resolved in:
 ^A v = ^A R_B ^B v. The code reads the course's sentence: the rotation *of* B
 *relative to* A.
