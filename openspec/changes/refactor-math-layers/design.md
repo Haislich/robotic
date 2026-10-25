@@ -76,6 +76,8 @@ Rejected: lifting the ban everywhere because it cannot reach tests and notebooks
 - Exact constants are methods: `Scalar.pi()`, `.sqrt()`, `.exp()`. A module-level `pi` is shadowed silently by `math.pi`.
 - Floats are accepted inside expressions as written. Shown before deciding: float `Rz(q) Rz(pi/2)[0,0]` simplifies to `-1.0*sin(q) + 6.12323399573677e-17*cos(q)` against the exact `-sin(q)`; `solve(cos q = 0.5)` gives `[1.04719755119660, 5.23598775598299]` against `[pi/3, 5*pi/3]`. The leak is intentional: writing `0.3` means not caring about exactness.
 
+Consequence kept (review round 2): a rotation built from floats does not reach the exact identity or half-turn branch of axis-angle. `Rz(math.pi)` has a skew part of norm 2.4e-16, so it takes the regular formulas, its second angle is −π, and its compiled flag is false. The tolerance flag (D28) reports exactly this near-singular case; the exact branches are for exact angles (`Scalar.pi()`).
+
 Rejected: rejecting floats at every entry point; raw float typed as `Numeric` with a documented trap table (only docs protected it); explicit exact fractions required (`Symbolic(3) / 10`); converting floats with `nsimplify` in the printer.
 
 ### D5. sympy functions as methods
@@ -147,6 +149,10 @@ Principle (the user's): data is bare components; meaning (the frame) is in the t
 Measured: a plain class returned from `jax.jit` raises `TypeError`; registered, it passes `jit`, `vmap` (frame kept, components `(2, 3)`) and `grad` (0.8775825618903728). Cost under `jit`: single call 8.3 µs raw versus 9.6 µs wrapped; `vmap` over 1000 configurations 18.2 µs versus 19.1 µs.
 
 Rejected: a bare `jax.Array` (frame lost).
+
+`jax_enable_x64` is set when `robotic` is imported, for the whole process (user's decision, review round 2). The library checks exam values against symbolic results, where float32 rounding would show as false mismatches. The side effect is stated in `docs/compilation.md` and `README.md`. Rejected: enabling x64 only inside `Compiled.__call__` (not probed; expected to fail under the caller's own `jit` / `vmap`, whose input dtypes are fixed when the outer trace runs, outside the scope); requiring the caller to enable it (a forgotten flag silently gives float32).
+
+The printed form of a `Numeric` works on concrete components only. Under tracing, the components are tracers, and printing them must not fail (review round 2: `.tolist()` raised `ConcretizationTypeError` inside `jax.jit`).
 
 ### D13. Axis-angle is symbolic
 
@@ -332,7 +338,7 @@ Rejected: building points through hidden attribute assignment after `object.__ne
 - Reverse operators take `float` (ruff PYI041: `int | float` is redundant); `int` is still accepted by the type checker and stays exact at runtime. `ScalarLike` keeps `Scalar | int | float` as the documented alias.
 - Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols. `ParameterShapeError(ValueError)` is raised at trace time for a field holding an array outside `vmap` (D11).
 
-Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above).
+Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above); a runtime fallback for values outside `ScalarLike`, such as `np.float32` (review round 2: ty already rejects them, and a runtime check would duplicate the type system).
 
 ### D32. Verification mechanisms
 
@@ -353,7 +359,9 @@ Rejected: executing extracted code blocks with `exec` (ruff S102, and outputs un
 - `AxisAngleSolutions` compiles its condition through the condition's own layout; the layout of a `ValidityCondition` is defined once. `Layout.condition` holds the condition itself, and `Compiled` (inside the boundary) reads its layout: calling `self._valid_when._layout()` from `AxisAngleSolutions` is private access across classes, which ruff's `private-member-access` flags outside `symbolic.py`.
 - `Rotation` and `Transform` are `@final`, like `Point`. ty 0.0.91 does not accept the private factory's `Rotation[A, B]` as `Self`, even on a final class; so `simplify`, `with_rotation` and `with_translation` are annotated with the concrete type (`Rotation[Target, Source]`, `Transform[Target, Source]`), which final makes equal to `Self`. Probed: the `Self` return with the factory is an `invalid-return-type` error; the concrete return on the final class is clean.
 - Method-level frame parameters are `A`, `B` (`about_z[A: Frame, B: Frame]`), the letters of ^A R_B; the class parameters stay `Target`, `Source`. Calls write `target=` before `source=`, the order of the type parameters.
-- The regular case simplifies the norm of the skew part once for the zero test and the sine, and `normalize` simplifies it again internally; strictly once would need `UnitVector` to expose its length, which no reader needs.
+- Open point, kept for a later revisit (user's decision, review round 2): the regular case simplifies the norm ‖s‖ of the skew part twice, once for sin θ = ½‖s‖ and once inside `normalize`, which divides s by its own simplified norm. Normalization happens once; the norm is computed twice because D20 lets no unit vector be built from a supplied length. The cost is one extra `sympy.simplify` of a square root per extraction. Ways to revisit, not chosen: a `UnitVector` built from a known length (reopens the hole D20 closes); `UnitVector` exposing its length (a public accessor on a type whose length is one); memoizing simplification in the boundary (hidden mutable state).
+
+The column search of the half turn always finds a column: r_kk + 1 = 2 r_k², and a unit axis has some r_k ≠ 0, while the search skips only entries proved zero. Rejected (review round 2): a default for the search or a separate error (it cannot be reached by a `Rotation`, whose public constructors guarantee a rotation).
 
 Rejected (review round 1): the half turn as valid everywhere (`1 != 0`, the earlier text): with the axis (a, 1, 0) normalized and the angle π, column 1 is chosen because r₁₁ + 1 = 2a²/(a² + 1) is not identically zero, and compiled at a = 0 the axis is NaN while `valid()` is true.
 

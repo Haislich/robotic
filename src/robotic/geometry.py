@@ -130,11 +130,8 @@ class _Resolved[F: Frame](Symbolic):
         Returns:
             The column of numbers, prefixed by `{}^{F}` with the frame's notation.
         """
-        return (
-            rf"{{}}^{{{self._frame.notation}}}\begin{{bmatrix}} "
-            rf"{self._x.latex()} \\ {self._y.latex()} \\ {self._z.latex()} "
-            r"\end{bmatrix}"
-        )
+        column = ((self._x,), (self._y,), (self._z,))
+        return rf"{{}}^{{{self._frame.notation}}}{self._bmatrix(column)}"
 
     @override
     def _layout(self) -> Layout:
@@ -279,6 +276,12 @@ class UnitVector[F: Frame](Vector[F]):
             direction.frame,
         )
 
+    def _of_unit_components(self, x: Scalar, y: Scalar, z: Scalar) -> Self:
+        unit: Self = object.__new__(type(self))
+        unit._x, unit._y, unit._z = x, y, z
+        unit._frame = self._frame
+        return unit
+
     @override
     def __neg__(self) -> Self:
         """Reverse the arrow; the length stays one, so nothing is normalized again.
@@ -286,20 +289,17 @@ class UnitVector[F: Frame](Vector[F]):
         Returns:
             The opposite unit vector, in the same frame.
         """
-        negated: Self = object.__new__(type(self))
-        negated._x, negated._y, negated._z = -self._x, -self._y, -self._z
-        negated._frame = self._frame
-        return negated
+        return self._of_unit_components(-self._x, -self._y, -self._z)
 
     @override
     def simplify(self) -> Self:
-        """Simplify each component.
+        """Simplify each component; the length stays one, so nothing is normalized.
 
         Returns:
             The same unit vector, in the same frame, with simplified components.
         """
-        return type(self)(
-            Vector(self.x.simplify(), self.y.simplify(), self.z.simplify(), self.frame)
+        return self._of_unit_components(
+            self._x.simplify(), self._y.simplify(), self._z.simplify()
         )
 
 

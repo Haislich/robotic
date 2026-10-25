@@ -152,15 +152,12 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         Returns:
             The LaTeX source.
         """
-        rows = (
-            " & ".join(self.entry(row, column).latex() for column in _INDICES)
-            for row in _INDICES
-        )
+        rows = ((self.entry(row, column) for column in _INDICES) for row in _INDICES)
         frames = (
             rf"{{}}^{{{self._rotation.target.notation}}}"
             rf"T_{{{self._rotation.source.notation}}}"
         )
-        return rf"{frames} = \begin{{bmatrix}} {r' \\ '.join(rows)} \end{{bmatrix}}"
+        return f"{frames} = {self._bmatrix(rows)}"
 
     @override
     def _layout(self) -> Layout:

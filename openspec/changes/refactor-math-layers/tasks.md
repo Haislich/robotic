@@ -67,6 +67,15 @@ Completed tasks 3.3, 4.1 and 5.1 are superseded where they name `latex=`, `of=` 
 - [x] 9.10 Rewrite `exams/2024_09_19.ipynb` against the new API, give `Frame3Down` a notation distinct from `Joint3`'s `3'`, and remove the dead `r_3_downward` derivation (user approves the notation and the removal); verify the notebook runs top to bottom with the same values as before
 - [x] 9.11 Verify the whole change as in 8.2
 
+## 10. Review round 2
+
+- [x] 10.1 A `Numeric` prints under tracing (design D12): a test that prints a compiled result inside `jax.jit` fails first, then passes; the concrete printed form is unchanged (`Numeric[Point[Base]]([1.5, 0.0, 0.0])` in `docs/compilation.md`)
+- [x] 10.2 Record that the regular case of `to_axis_angle` simplifies the norm of the skew part twice, once for sin θ and once inside `normalize` (design D33, open point); the code is unchanged; verify the axis-angle tests pass
+- [x] 10.3 `UnitVector.simplify` simplifies the components without normalizing again, as `__neg__` does (design D20); verify `FreeAxis` stays `FreeAxis` and the geometry tests pass
+- [x] 10.4 One matrix-vector product and one bmatrix rendering: `Rotation @ Vector` uses `_Matrix3`, and `Transform.latex` shares the row rendering; verify the LaTeX and oracle tests pass unchanged
+- [x] 10.5 State the process-wide `jax_enable_x64` in `docs/compilation.md` and `README.md` (design D12); verify `tests/test_docs.py` passes
+- [x] 10.6 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.

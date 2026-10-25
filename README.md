@@ -2,7 +2,7 @@
 
 Hand-implemented robot kinematics for studying the robotics course and verifying exam exercises, written so the code reads like a handwritten solution: frames are types, ^A R_B is `Rotation[A, B]`, and mixing frames or adding two points is a type error before anything runs.
 
-Everything is symbolic (sympy, behind a typed boundary): scalars, points and vectors resolved in a frame, rotations with their axis-angle solutions, and homogeneous transformations. Numbers come from compiling a quantity to a JAX function of a parameters dataclass, which works under `jax.jit`, `jax.vmap` and `jax.grad`. Euler angles, manipulators, DH tables and Jacobians come with later changes.
+Everything is symbolic (sympy, behind a typed boundary): scalars, points and vectors resolved in a frame, rotations with their axis-angle solutions, and homogeneous transformations. Numbers come from compiling a quantity to a JAX function of a parameters dataclass, which works under `jax.jit`, `jax.vmap` and `jax.grad`. Importing `robotic` turns on JAX's double precision (`jax_enable_x64`) for the whole process, so other JAX code in the same program defaults to float64 too. Euler angles, manipulators, DH tables and Jacobians come with later changes.
 
 ```python
 from robotic import Frame, Rotation, Scalar

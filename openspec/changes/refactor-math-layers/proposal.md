@@ -46,4 +46,5 @@ None. `openspec/specs/` is empty.
 - Euler angles and RPY (deferred to their own change; design D24).
 - Numeric backends other than JAX.
 - Static tracking of which symbols an expression contains.
+- Simplifying the skew norm of axis-angle once instead of twice (design D33, open point).
 - The ast-grep style-rule change (separate, small, planned), including a ban on identifiers ending in a single `_` (keyword escapes such as `from_`).

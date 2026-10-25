@@ -37,6 +37,15 @@ class _Matrix3:
             )
         )
 
+    def column_product(
+        self, x: Scalar, y: Scalar, z: Scalar
+    ) -> tuple[Scalar, Scalar, Scalar]:
+        first, second, third = (
+            self.entry(row, 1) * x + self.entry(row, 2) * y + self.entry(row, 3) * z
+            for row in _INDICES
+        )
+        return first, second, third
+
     def transpose(self) -> _Matrix3:
         return _Matrix3(
             tuple(self.entry(column, row) for row in _INDICES for column in _INDICES)
@@ -44,13 +53,6 @@ class _Matrix3:
 
     def simplify(self) -> _Matrix3:
         return _Matrix3(tuple(entry.simplify() for entry in self._entries))
-
-    def latex(self) -> str:
-        rows = (
-            " & ".join(self.entry(row, column).latex() for column in _INDICES)
-            for row in _INDICES
-        )
-        return rf"\begin{{bmatrix}} {r' \\ '.join(rows)} \end{{bmatrix}}"
 
     def rows(self) -> str:
         return ", ".join(
@@ -393,12 +395,7 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
                     self._target, other.source, self._matrix @ other._matrix
                 )
             case Vector():
-                x, y, z = (
-                    self.entry(row, 1) * other.x
-                    + self.entry(row, 2) * other.y
-                    + self.entry(row, 3) * other.z
-                    for row in _INDICES
-                )
+                x, y, z = self._matrix.column_product(other.x, other.y, other.z)
                 return self._target.vector(x, y, z)
 
     def inverse(self) -> Rotation[Source, Target]:
@@ -483,10 +480,9 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         Returns:
             The LaTeX source.
         """
-        return (
-            rf"{{}}^{{{self._target.notation}}}R_{{{self._source.notation}}} = "
-            f"{self._matrix.latex()}"
-        )
+        rows = ((self.entry(row, column) for column in _INDICES) for row in _INDICES)
+        frames = rf"{{}}^{{{self._target.notation}}}R_{{{self._source.notation}}}"
+        return f"{frames} = {self._bmatrix(rows)}"
 
     @override
     def _layout(self) -> Layout:

@@ -55,6 +55,16 @@ shape: `()` for a scalar, `(3,)` for a point or vector, `(3, 3)` for a rotation,
 
 ```
 
+Double precision holds for the whole program: importing `robotic` turns on JAX's
+`jax_enable_x64`, so any other JAX code in the same process also defaults to float64.
+
+```python
+>>> import jax
+>>> jax.config.read("jax_enable_x64")
+True
+
+```
+
 Calling with anything but an `Arm`, or building an `Arm` without a field, is a type
 error.
 

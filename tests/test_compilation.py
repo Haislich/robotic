@@ -198,6 +198,15 @@ def test_batched_configurations() -> None:
     assert repr(batched).startswith("Numeric[Vector[Base]]")
 
 
+def test_printing_under_tracing() -> None:
+    def printed(value: jax.typing.ArrayLike) -> jax.Array:
+        result = sine_vector()(Batch(q1=value))
+        assert repr(result).startswith("Numeric[Vector[Base]](")
+        return result.components
+
+    assert jax.jit(printed)(0.5).shape == (3,)
+
+
 def test_array_passed_directly() -> None:
     compiled = Rotation.about_z(q1, target=Base, source=Tool).lambdify(Batch)
     with pytest.raises(ParameterShapeError, match=r"q1.*jax\.vmap"):

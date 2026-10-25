@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING, Self, override
 import jax
 import jax.numpy as jnp
 import sympy
+from jax.core import Tracer
 from jax.typing import ArrayLike
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from _typeshed import DataclassInstance
 
@@ -49,6 +50,11 @@ class Symbolic(ABC):
 
     @abstractmethod
     def _layout(self) -> Layout: ...
+
+    @staticmethod
+    def _bmatrix(rows: Iterable[Iterable[Scalar]]) -> str:
+        lines = (" & ".join(entry.latex() for entry in row) for row in rows)
+        return rf"\begin{{bmatrix}} {r' \\ '.join(lines)} \end{{bmatrix}}"
 
     def lambdify[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]:
         """Compile the quantity to a JAX function of a parameters dataclass.
@@ -502,9 +508,12 @@ class Numeric[T: Symbolic]:
         """Print the type and the components.
 
         Returns:
-            E.g. `Numeric[Point[Base]]([1.0, 0.5, 0.0])`.
+            E.g. `Numeric[Point[Base]]([1.0, 0.5, 0.0])`; under tracing the components
+            print as JAX prints a tracer.
         """
-        return f"Numeric[{self._label}]({self._components.tolist()})"
+        components = self._components
+        shown = components if isinstance(components, Tracer) else components.tolist()
+        return f"Numeric[{self._label}]({shown})"
 
     @staticmethod
     def _flatten(
