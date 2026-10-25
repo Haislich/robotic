@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --frozen --quiet --project \"$CLAUDE_PROJECT_DIR\" python \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_python.py\""
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "feature-dev@anthropic-plugin-directory": true,
+    "claude-code-setup@anthropic-plugin-directory": true,
+    "serena@anthropic-plugin-directory": true,
+    "sourcegraph@anthropic-plugin-directory": true,
+    "math-olympiad@anthropic-plugin-directory": true,
+    "active-memory@anthropic-plugin-directory": true
+  }
+}

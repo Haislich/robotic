@@ -1,39 +1,70 @@
 [project]
 name = "robotic"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hand-implemented robot kinematics for studying and verifying robotics exam exercises."
 readme = "README.md"
 authors = [{ name = "haislich", email = "josedlv936@gmail.com" }]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
-    "ipykernel>=6.29.5",
-    "ipympl>=0.9.7",
+    "jax>=0.12.0.1",
     "loguru>=0.7.3",
-    "matplotlib>=3.10.1",
-    "mpmath>=1.3.0",
-    "mypy>=1.15.0",
-    "numpy>=2.2.4",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
     "pandas>=2.2.3",
-    "pandas-stubs>=2.2.3.250308",
-    "pyqt6>=6.9.0",
-    "pytest>=8.3.5",
-    "sympy>=1.13.3",
+    "pydantic>=2.14.1",
+    "sympy>=1.14.0",
 ]
-
-[project.scripts]
-robotic = "robotic:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[[tool.mypy.overrides]]
-module = "sympy.*"
-ignore_missing_imports = true
-
 [dependency-groups]
 dev = [
-    "nbqa>=1.9.1",
-    "pylint>=3.3.6",
-    "ruff>=0.11.6",
+    "ast-grep-cli==0.51.0",
+    "hypothesis>=6.170.6",
+    "pandas-stubs>=2.2.3.250308",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "roboticstoolbox-python>=1.4.4",
+    "ruff==0.17.2",
+    "ty==0.0.91",
 ]
+notebooks = [
+    "ipykernel>=7.4.0",
+    "ipympl>=0.10.0",
+    "polars>=2.0.0",
+]
+
+[tool.uv]
+default-groups = "all"
+
+[tool.ruff]
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+preview = true
+select = ["ALL"]
+ignore = ["COM812", "CPY001"]
+
+[tool.ruff.lint.per-file-ignores]
+".claude/hooks/*.py" = ["INP001", "S404", "S603"]
+"tests/**" = ["D1", "S101", "TID251"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pep8-naming]
+ignore-names = ["J", "R", "T"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"roboticstoolbox".msg = "Oracle library: import it only from tests/."
+"spatialmath".msg = "Oracle library: import it only from tests/."
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+strict-equality-semantics = true
+strict-generic-narrowing = true

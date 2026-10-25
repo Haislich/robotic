@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-python
+        name: ruff format, ruff check, ty, suppression ban
+        entry: uv run --frozen --quiet python .claude/hooks/check_python.py
+        language: system
+        types: [python]
