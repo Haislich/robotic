@@ -49,7 +49,7 @@
 ## 8. Integration
 
 - [x] 8.1 Update `README.md` to describe the new library (no Jacobians or manipulator until their change); verify every documented command runs as written
-- [ ] 8.2 Verify the whole change together: `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest` (negative type test included) all pass, `openspec validate refactor-math-layers --strict` passes, and `git status` lists only the files named in the proposal's Impact section
+- [x] 8.2 Verify the whole change together: `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest` (negative type test included) all pass, `openspec validate refactor-math-layers --strict` passes, and `git status` lists only the files named in the proposal's Impact section
 
 ## Workflow follow-up
 
