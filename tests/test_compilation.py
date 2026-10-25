@@ -19,6 +19,7 @@ from robotic import (
     Frame,
     MissingParameterError,
     Numeric,
+    ParameterShapeError,
     ParameterTypeError,
     Point,
     Rotation,
@@ -30,7 +31,7 @@ from robotic import (
 from tests.stringified import Stringified
 
 
-class Base(Frame, latex="0"):
+class Base(Frame, notation="0"):
     """Fixed frame."""
 
 
@@ -91,9 +92,13 @@ GRADIENT_AT_HALF = 0.8775825618903728
 
 
 def planar_arm() -> Transform[Base, Tool]:
-    base_link1 = Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), 0, 0, 0)
-    link1_tool = Rotation.about_z(q2, of=Tool, relative_to=Link1).with_origin(
-        Link1.point(l1, 0, 0)
+    base_link1 = Transform(target=Base, source=Link1).with_rotation(
+        Rotation.about_z(q1, target=Base, source=Link1)
+    )
+    link1_tool = (
+        Transform(target=Link1, source=Tool)
+        .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
+        .with_translation(Link1.vector(l1, 0, 0))
     )
     return base_link1 @ link1_tool
 
@@ -193,12 +198,27 @@ def test_batched_configurations() -> None:
     assert repr(batched).startswith("Numeric[Vector[Base]]")
 
 
+def test_array_passed_directly() -> None:
+    compiled = Rotation.about_z(q1, target=Base, source=Tool).lambdify(Batch)
+    with pytest.raises(ParameterShapeError, match=r"q1.*jax\.vmap"):
+        compiled(Batch(q1=jnp.array([0.1, 0.2])))
+
+
+def test_array_batched_with_vmap() -> None:
+    compiled = Rotation.about_z(q1, target=Base, source=Tool).lambdify(Batch)
+
+    def at(value: jax.typing.ArrayLike) -> Numeric[Rotation[Base, Tool]]:
+        return compiled(Batch(q1=value))
+
+    assert jax.vmap(at)(jnp.array([0.1, 0.2])).components.shape == (2, 3, 3)
+
+
 def test_gradient() -> None:
     assert float(jax.grad(sine_x)(0.5)) == pytest.approx(GRADIENT_AT_HALF, rel=1e-15)
 
 
 def solutions_at(value: float) -> Numeric[AxisAngleSolutions[Base]]:
-    rotation = Rotation.about_z(q1, of=Tool, relative_to=Base)
+    rotation = Rotation.about_z(q1, target=Base, source=Tool)
     return rotation.to_axis_angle().lambdify(Joint)(Joint(q1=value))
 
 
@@ -223,7 +243,7 @@ def test_regular_configuration() -> None:
 
 def test_validity_condition_compiles_to_a_flag() -> None:
     condition = (
-        Rotation.about_z(q1, of=Tool, relative_to=Base).to_axis_angle().valid_when
+        Rotation.about_z(q1, target=Base, source=Tool).to_axis_angle().valid_when
     )
     compiled = condition.lambdify(Joint)
     assert_type(compiled, Compiled[Joint, ValidityCondition])
@@ -234,7 +254,7 @@ def test_validity_condition_compiles_to_a_flag() -> None:
 
 
 def test_flag_survives_vmap() -> None:
-    rotation = Rotation.about_z(q1, of=Tool, relative_to=Base)
+    rotation = Rotation.about_z(q1, target=Base, source=Tool)
     compiled = rotation.to_axis_angle().lambdify(Batch)
 
     def at(value: jax.typing.ArrayLike) -> Numeric[AxisAngleSolutions[Base]]:
@@ -267,7 +287,7 @@ def test_compiled_transform_matches_the_substituted_one(
 @example(1e-12)
 @example(math.pi)
 def test_compiled_axis_matches_the_substituted_one(angle: float) -> None:
-    rotation = Rotation.about_axis(Base.vector(1, 2, 3).normalize(), q1, of=Tool)
+    rotation = Rotation.about_axis(Base.vector(1, 2, 3).normalize(), q1, source=Tool)
     first = rotation.to_axis_angle().first
     compiled = float(first.angle.lambdify(Joint)(Joint(q1=angle)).components)
     expected = substituted(first.angle, {"q1": angle})

@@ -1,8 +1,9 @@
 # Transforms
 
-^A T_B is the pose of frame B relative to frame A: the rotation ^A R_B and the origin
-of B resolved in A, the homogeneous matrix [R | t; 0 0 0 1]. On a point it is
-R p + t; on a vector it is R v, because a translation does not move an arrow.
+^A T_B maps points expressed in the source B to the target A. It is the rotation
+^A R_B and the translation ^A p, the origin of B expressed in A: the homogeneous matrix
+[R | t; 0 0 0 1]. On a point it is R p + t; on a vector it is R v, because a
+translation does not move an arrow.
 
 ## A planar 2R arm, end to end
 
@@ -11,34 +12,33 @@ the base; frame `Tool` turns by q2 at the end of the first link.
 
 ```python
 >>> from robotic import Frame, Rotation, Scalar, Transform
->>> class Base(Frame, latex="0"):
+>>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
->>> class Link1(Frame, latex="1"):
+>>> class Link1(Frame, notation="1"):
 ...     """Frame moving with the first link."""
->>> class Tool(Frame, latex="2"):
+>>> class Tool(Frame, notation="2"):
 ...     """Frame moving with the second link."""
 >>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
 >>> l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
 
 ```
 
-A transform is built from its rotation and the origin's three coordinates, read in
-the rotation's reference frame, like the exam's [R | t]:
+A transform is built from its two frames, which gives the identity between them.
+Setting the rotation or the translation returns a new transform with the same frames,
+like filling in the exam's [R | t]; a rotation between other frames, or a translation
+in another frame, is a type error:
 
 ```python
->>> base_link1 = Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), 0, 0, 0)
-
-```
-
-When the origin is already a point, the rotation takes it; a point in the wrong frame
-is a type error:
-
-```python
->>> link1_tool = Rotation.about_z(q2, of=Tool, relative_to=Link1).with_origin(
-...     Link1.point(l1, 0, 0)
+>>> base_link1 = Transform(target=Base, source=Link1).with_rotation(
+...     Rotation.about_z(q1, target=Base, source=Link1)
 ... )
->>> link1_tool.origin
-Point[Link1](l1, 0, 0)
+>>> link1_tool = (
+...     Transform(target=Link1, source=Tool)
+...     .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
+...     .with_translation(Link1.vector(l1, 0, 0))
+... )
+>>> link1_tool.translation
+Vector[Link1](l1, 0, 0)
 
 ```
 
@@ -72,11 +72,11 @@ Vector[Base](cos(q1 + q2), sin(q1 + q2), 0)
 
 ## Inverse
 
-The inverse ^B T_A has rotation Rᵀ and origin −Rᵀ t:
+The inverse ^B T_A has rotation Rᵀ and translation −Rᵀ t:
 
 ```python
->>> base_tool.inverse().origin.simplify()
-Point[Tool](-l1*cos(q2), l1*sin(q2), 0)
+>>> base_tool.inverse().translation.simplify()
+Vector[Tool](-l1*cos(q2), l1*sin(q2), 0)
 >>> (base_tool @ base_tool.inverse()).simplify().entry(1, 4)
 0
 

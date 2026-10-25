@@ -7,7 +7,7 @@ import pytest
 from robotic import Frame, FreeAxis, Point, Scalar, UnitVector, Vector, ZeroVectorError
 
 
-class Base(Frame, latex="0"):
+class Base(Frame, notation="0"):
     """Fixed frame, numbered as the exam numbers it."""
 
 
@@ -71,13 +71,20 @@ def test_dot_and_norm() -> None:
 
 
 def test_building_a_unit_vector_normalizes() -> None:
-    unit = UnitVector(Tool.vector(3, 4, 0))
+    unit = Tool.vector(3, 4, 0).normalize()
     assert_type(unit, UnitVector[Tool])
     assert repr(unit) == "UnitVector[Tool](3/5, 4/5, 0)"
     assert (
         repr(Tool.vector(1, 1, 0).normalize())
         == "UnitVector[Tool](sqrt(2)/2, sqrt(2)/2, 0)"
     )
+
+
+def test_negating_a_unit_vector_keeps_it_unit() -> None:
+    unit = Tool.vector(3, 4, 0).normalize()
+    assert_type(-unit, UnitVector[Tool])
+    assert repr(-unit) == "UnitVector[Tool](-3/5, -4/5, 0)"
+    assert repr(-FreeAxis(Tool.vector(0, 0, 1))) == "FreeAxis[Tool](0, 0, -1)"
 
 
 def test_simplified_norm() -> None:
@@ -108,17 +115,17 @@ def test_simplify_keeps_the_frame() -> None:
 
 
 def test_default_name() -> None:
-    assert Tool.latex == "Tool"
+    assert Tool.notation == "Tool"
     assert "{}^{Tool}" in Tool.vector(1, 0, 0).latex()
 
 
-def test_declared_name() -> None:
-    assert Base.latex == "0"
+def test_declared_notation() -> None:
+    assert Base.notation == "0"
     assert Base.vector(q, 0, 0).latex() == (
         r"{}^{0}\begin{bmatrix} q \\ 0 \\ 0 \end{bmatrix}"
     )
 
 
 def test_misspelled_declaration_raises_at_runtime() -> None:
-    with pytest.raises(TypeError, match="latx"):
-        type("Misspelled", (Frame,), {}, latx="1")
+    with pytest.raises(TypeError, match="notaton"):
+        type("Misspelled", (Frame,), {}, notaton="1")

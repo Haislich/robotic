@@ -12,23 +12,24 @@ from robotic.symbolic import Layout, Scalar, ScalarLike, Symbolic
 
 
 class Frame:
-    """A coordinate frame, declared by subclassing: `class Base(Frame, latex="0")`.
+    """A coordinate frame, declared by subclassing: `class Base(Frame, notation="0")`.
 
     Attributes:
-        latex: The frame's name in LaTeX superscripts; the class name unless declared.
+        notation: How the course writes the frame in superscripts and subscripts; the
+            class name unless declared.
     """
 
-    latex: ClassVar[str] = "Frame"
+    notation: ClassVar[str] = "Frame"
 
-    def __init_subclass__(cls, *, latex: str | None = None) -> None:
-        """Record the frame's LaTeX name.
+    def __init_subclass__(cls, *, notation: str | None = None) -> None:
+        """Record how the course writes the frame.
 
         Args:
-            latex: The name written as the course writes it, e.g. `"0"` for ^0;
+            notation: The frame as the course writes it, e.g. `"0"` for ^0 or `"3'"`;
                 the class name when omitted.
         """
         super().__init_subclass__()
-        cls.latex = cls.__name__ if latex is None else latex
+        cls.notation = cls.__name__ if notation is None else notation
 
     @classmethod
     def point(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Point[Self]:
@@ -37,7 +38,7 @@ class Frame:
         Returns:
             The point, resolved in this frame.
         """
-        return Point(cls, x, y, z)
+        return Point(x, y, z, cls)
 
     @classmethod
     def vector(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Vector[Self]:
@@ -46,7 +47,7 @@ class Frame:
         Returns:
             The vector, resolved in this frame.
         """
-        return Vector(cls, x, y, z)
+        return Vector(x, y, z, cls)
 
     @classmethod
     def origin(cls) -> Point[Self]:
@@ -55,7 +56,7 @@ class Frame:
         Returns:
             The point (0, 0, 0), resolved in this frame.
         """
-        return Point(cls, 0, 0, 0)
+        return Point(0, 0, 0, cls)
 
 
 class ZeroVectorError(ValueError):
@@ -76,15 +77,15 @@ class _Resolved[F: Frame](Symbolic):
     __slots__ = ("_frame", "_x", "_y", "_z")
 
     def __init__(
-        self, frame: type[F], x: ScalarLike, y: ScalarLike, z: ScalarLike
+        self, x: ScalarLike, y: ScalarLike, z: ScalarLike, frame: type[F]
     ) -> None:
         """Read three numbers in a frame.
 
         Args:
-            frame: The frame the numbers are read in.
             x: The number along the x axis of `frame`.
             y: The number along the y axis of `frame`.
             z: The number along the z axis of `frame`.
+            frame: The frame the numbers are read in.
         """
         self._frame = frame
         self._x = Scalar(x)
@@ -119,7 +120,7 @@ class _Resolved[F: Frame](Symbolic):
             The same quantity, in the same frame, with simplified numbers.
         """
         return type(self)(
-            self._frame, self._x.simplify(), self._y.simplify(), self._z.simplify()
+            self._x.simplify(), self._y.simplify(), self._z.simplify(), self._frame
         )
 
     @override
@@ -127,10 +128,10 @@ class _Resolved[F: Frame](Symbolic):
         """Render as a column with the frame as left superscript.
 
         Returns:
-            The column of numbers, prefixed by `{}^{F}` with the frame's LaTeX name.
+            The column of numbers, prefixed by `{}^{F}` with the frame's notation.
         """
         return (
-            rf"{{}}^{{{self._frame.latex}}}\begin{{bmatrix}} "
+            rf"{{}}^{{{self._frame.notation}}}\begin{{bmatrix}} "
             rf"{self._x.latex()} \\ {self._y.latex()} \\ {self._z.latex()} "
             r"\end{bmatrix}"
         )
@@ -157,7 +158,7 @@ class _Resolved[F: Frame](Symbolic):
 class Vector[F: Frame](_Resolved[F]):
     """An arrow resolved in the frame `F`: its components along the axes of `F`.
 
-    `frame.vector(x, y, z)` is the usual spelling of `Vector(frame, x, y, z)`.
+    `frame.vector(x, y, z)` is the usual spelling of `Vector(x, y, z, frame)`.
     """
 
     __slots__ = ()
@@ -169,7 +170,7 @@ class Vector[F: Frame](_Resolved[F]):
             The sum, in the same frame.
         """
         return Vector(
-            self._frame, self._x + other.x, self._y + other.y, self._z + other.z
+            self._x + other.x, self._y + other.y, self._z + other.z, self._frame
         )
 
     def __sub__(self, other: Vector[F]) -> Vector[F]:
@@ -179,7 +180,7 @@ class Vector[F: Frame](_Resolved[F]):
             The difference, in the same frame.
         """
         return Vector(
-            self._frame, self._x - other.x, self._y - other.y, self._z - other.z
+            self._x - other.x, self._y - other.y, self._z - other.z, self._frame
         )
 
     def __neg__(self) -> Vector[F]:
@@ -188,7 +189,7 @@ class Vector[F: Frame](_Resolved[F]):
         Returns:
             The opposite vector, in the same frame.
         """
-        return Vector(self._frame, -self._x, -self._y, -self._z)
+        return Vector(-self._x, -self._y, -self._z, self._frame)
 
     def __mul__(self, factor: ScalarLike) -> Vector[F]:
         """Scale by a number.
@@ -196,7 +197,7 @@ class Vector[F: Frame](_Resolved[F]):
         Returns:
             The scaled vector, in the same frame.
         """
-        return Vector(self._frame, self._x * factor, self._y * factor, self._z * factor)
+        return Vector(self._x * factor, self._y * factor, self._z * factor, self._frame)
 
     def __rmul__(self, factor: float) -> Vector[F]:
         """Scale by a number written on the left.
@@ -213,7 +214,7 @@ class Vector[F: Frame](_Resolved[F]):
             The scaled vector, in the same frame.
         """
         return Vector(
-            self._frame, self._x / divisor, self._y / divisor, self._z / divisor
+            self._x / divisor, self._y / divisor, self._z / divisor, self._frame
         )
 
     def dot(self, other: Vector[F]) -> Scalar:
@@ -231,10 +232,10 @@ class Vector[F: Frame](_Resolved[F]):
             `self x other`, in the same frame.
         """
         return Vector(
-            self._frame,
             self._y * other.z - self._z * other.y,
             self._z * other.x - self._x * other.z,
             self._x * other.y - self._y * other.x,
+            self._frame,
         )
 
     def norm(self) -> Scalar:
@@ -272,11 +273,23 @@ class UnitVector[F: Frame](Vector[F]):
         if length.is_zero():
             raise ZeroVectorError(direction)
         super().__init__(
-            direction.frame,
             direction.x / length,
             direction.y / length,
             direction.z / length,
+            direction.frame,
         )
+
+    @override
+    def __neg__(self) -> Self:
+        """Reverse the arrow; the length stays one, so nothing is normalized again.
+
+        Returns:
+            The opposite unit vector, in the same frame.
+        """
+        negated: Self = object.__new__(type(self))
+        negated._x, negated._y, negated._z = -self._x, -self._y, -self._z
+        negated._frame = self._frame
+        return negated
 
     @override
     def simplify(self) -> Self:
@@ -286,7 +299,7 @@ class UnitVector[F: Frame](Vector[F]):
             The same unit vector, in the same frame, with simplified components.
         """
         return type(self)(
-            Vector(self.frame, self.x.simplify(), self.y.simplify(), self.z.simplify())
+            Vector(self.x.simplify(), self.y.simplify(), self.z.simplify(), self.frame)
         )
 
 
@@ -300,7 +313,7 @@ class FreeAxis[F: Frame](UnitVector[F]):
 class Point[F: Frame](_Resolved[F]):
     """A point resolved in the frame `F`: its coordinates from the origin of `F`.
 
-    `frame.point(x, y, z)` is the usual spelling of `Point(frame, x, y, z)`.
+    `frame.point(x, y, z)` is the usual spelling of `Point(x, y, z, frame)`.
     """
 
     __slots__ = ()
@@ -320,9 +333,9 @@ class Point[F: Frame](_Resolved[F]):
         x, y, z = self._x - other.x, self._y - other.y, self._z - other.z
         match other:
             case Point():
-                return Vector(self._frame, x, y, z)
+                return Vector(x, y, z, self._frame)
             case Vector():
-                return Point(self._frame, x, y, z)
+                return Point(x, y, z, self._frame)
 
     def __add__(self, other: Vector[F]) -> Point[F]:
         """Displace the point by a vector of the same frame.
@@ -331,5 +344,5 @@ class Point[F: Frame](_Resolved[F]):
             The displaced point, in the same frame.
         """
         return Point(
-            self._frame, self._x + other.x, self._y + other.y, self._z + other.z
+            self._x + other.x, self._y + other.y, self._z + other.z, self._frame
         )

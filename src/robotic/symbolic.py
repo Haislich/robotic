@@ -54,8 +54,9 @@ class Symbolic(ABC):
         """Compile the quantity to a JAX function of a parameters dataclass.
 
         Args:
-            parameters: A dataclass whose fields, all annotated `float`, name the
-                symbols of the quantity. Extra fields are allowed.
+            parameters: A dataclass whose fields, each annotated `float` or
+                `jax.typing.ArrayLike`, name the symbols of the quantity. Extra fields
+                are allowed.
 
         Returns:
             The compiled function.
@@ -80,7 +81,7 @@ class Layout:
     entries: tuple[Scalar, ...]
     shape: tuple[int, ...]
     tolerance: float | None = None
-    condition: Layout | None = None
+    condition: Symbolic | None = None
 
 
 class Scalar(Symbolic):
@@ -363,6 +364,22 @@ class ParameterTypeError(TypeError):
         super().__init__(f"field {name!r} of {parameters.__name__} {message}")
 
 
+class ParameterShapeError(ValueError):
+    """A field of the parameters holds an array: batching goes through `jax.vmap`."""
+
+    def __init__(self, name: str, shape: tuple[int, ...]) -> None:
+        """Name the field and its shape.
+
+        Args:
+            name: The field holding an array.
+            shape: The shape of the array it holds.
+        """
+        super().__init__(
+            f"field {name!r} holds an array of shape {shape}; every field must be a "
+            "scalar of shape (), batch configurations with jax.vmap"
+        )
+
+
 class Compiled[P: DataclassInstance, T: Symbolic]:
     """A symbolic quantity compiled to a JIT-compiled JAX function of `P`."""
 
@@ -387,7 +404,8 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         for name in names:
             if hints[name] is not float and hints[name] != ArrayLike:
                 raise ParameterTypeError(parameters, name)
-        flag = layout.condition.entries if layout.condition else ()
+        condition = layout.condition._layout() if layout.condition else None
+        flag = condition.entries if condition else ()
         expressions = [entry._expression for entry in (*layout.entries, *flag)]
         free = frozenset(
             str(symbol)
@@ -400,6 +418,7 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         symbols = [sympy.Symbol(name, real=True) for name in names]
         self._names = names
         self._layout = layout
+        self._condition = condition
         self._function = sympy.lambdify(symbols, expressions, modules="jax")
         self._evaluate = jax.jit(self._kernel)
 
@@ -411,14 +430,17 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         return jnp.abs(components) > layout.tolerance
 
     def _kernel(self, *values: jax.Array) -> Numeric[T]:
+        for name, value in zip(self._names, values, strict=True):
+            if jnp.shape(value):
+                raise ParameterShapeError(name, jnp.shape(value))
         results = [
             jnp.asarray(entry, dtype=jnp.float64) for entry in self._function(*values)
         ]
         size = len(self._layout.entries)
         components = self._shaped(results[:size], self._layout)
         valid = (
-            self._shaped(results[size:], self._layout.condition)
-            if self._layout.condition
+            self._shaped(results[size:], self._condition)
+            if self._condition
             else jnp.ones((), dtype=bool)
         )
         return Numeric(self._layout.label, components, valid)
@@ -427,8 +449,10 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         """Evaluate at one configuration.
 
         Args:
-            values: The parameter values; JAX tracers are accepted, so the call works
-                under `jax.jit`, `jax.vmap` and `jax.grad`.
+            values: The parameter values, each of shape `()`; JAX tracers are
+                accepted, so the call works under `jax.jit`, `jax.vmap` and
+                `jax.grad`. A field holding an array raises `ParameterShapeError`
+                when JAX traces; batch with `jax.vmap`.
 
         Returns:
             The compiled result.

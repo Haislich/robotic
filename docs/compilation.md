@@ -11,12 +11,12 @@ matched to symbols by name; order is irrelevant and extra fields are allowed.
 
 ```python
 >>> from dataclasses import dataclass
->>> from robotic import Frame, Rotation, Scalar
->>> class Base(Frame, latex="0"):
+>>> from robotic import Frame, Rotation, Scalar, Transform
+>>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
->>> class Link1(Frame, latex="1"):
+>>> class Link1(Frame, notation="1"):
 ...     """Frame moving with the first link."""
->>> class Tool(Frame, latex="2"):
+>>> class Tool(Frame, notation="2"):
 ...     """Frame moving with the second link."""
 >>> @dataclass(frozen=True)
 ... class Arm:
@@ -27,10 +27,12 @@ matched to symbols by name; order is irrelevant and extra fields are allowed.
 ...     l2: float
 >>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
 >>> l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
->>> base_tool = Rotation.about_z(q1, of=Link1, relative_to=Base).with_origin(
-...     Base.origin()
-... ) @ Rotation.about_z(q2, of=Tool, relative_to=Link1).with_origin(
-...     Link1.point(l1, 0, 0)
+>>> base_tool = Transform(target=Base, source=Link1).with_rotation(
+...     Rotation.about_z(q1, target=Base, source=Link1)
+... ) @ (
+...     Transform(target=Link1, source=Tool)
+...     .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
+...     .with_translation(Link1.vector(l1, 0, 0))
 ... )
 >>> tip = (base_tool @ Tool.point(l2, 0, 0)).simplify()
 >>> position = tip.lambdify(Arm)
@@ -90,10 +92,12 @@ write `jax.typing.ArrayLike` with `import jax`, not a name imported only under
 
 ## Batches and gradients
 
-Compiled functions work under `jax.jit`, `jax.vmap` and `jax.grad`. JAX keeps the
-signature of the function it transforms, so code that batches annotates its fields
-and parameters `jax.typing.ArrayLike`, which accepts floats and arrays alike. Under
-`vmap` the leading axis of the components is the configuration and the frame is kept:
+Compiled functions work under `jax.jit`, `jax.vmap` and `jax.grad`. `jax.vmap` is the
+only way to batch: every field value is a scalar of shape `()`, which is what `vmap`
+hands in. JAX keeps the signature of the function it transforms, so code that batches
+annotates its fields and parameters `jax.typing.ArrayLike`, the annotation that lets
+`vmap` type-check. Under `vmap` the leading axis of the components is the
+configuration and the frame is kept:
 
 ```python
 >>> import jax
@@ -117,6 +121,17 @@ and parameters `jax.typing.ArrayLike`, which accepts floats and arrays alike. Un
 
 ```
 
+An array given directly, outside `vmap`, is rejected when JAX traces:
+
+```python
+>>> direction(Joint(q1=jnp.array([0.0, jnp.pi / 2])))  # doctest: +ELLIPSIS
+Traceback (most recent call last):
+...
+robotic.symbolic.ParameterShapeError: field 'q1' holds an array of shape (2,); every field must be a scalar of shape (), batch configurations with jax.vmap
+...
+
+```
+
 ## Axis-angle, with its validity flag
 
 The axis-angle solutions are formulas valid where sin θ ≠ 0. Compile them as a whole:
@@ -126,7 +141,7 @@ r_x, r_y, r_z, θ. `valid()` exists only on compiled axis-angle solutions, and i
 where |sin θ| exceeds the tolerance (default `1e-9`).
 
 ```python
->>> solutions = Rotation.about_z(q1, of=Tool, relative_to=Base).to_axis_angle()
+>>> solutions = Rotation.about_z(q1, target=Base, source=Tool).to_axis_angle()
 >>> compiled = solutions.lambdify(Joint)
 >>> regular = compiled(Joint(q1=0.5))
 >>> regular.components.tolist()

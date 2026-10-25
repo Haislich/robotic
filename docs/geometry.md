@@ -2,17 +2,17 @@
 
 ## Frames are types
 
-A frame is a class you declare. Its LaTeX name is a class keyword, because the exam
-numbers its frames (^0, ^3) and a class cannot be called `0`; without the keyword
-the class name is used.
+A frame is a class you declare. How the course writes it, its notation, is a class
+keyword, because the exam numbers its frames (^0, ^3') and a class cannot be called
+`0`; without the keyword the class name is used.
 
 ```python
 >>> from robotic import Frame, Scalar
->>> class Base(Frame, latex="0"):
+>>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
 >>> class Hand(Frame):
 ...     """Frame of the hand."""
->>> Base.latex, Hand.latex
+>>> Base.notation, Hand.notation
 ('0', 'Hand')
 
 ```
@@ -104,8 +104,7 @@ A unit vector is only ever the normalization of a vector: building one divides t
 components by their simplified norm, so no square root is left where none is needed.
 
 ```python
->>> from robotic import UnitVector
->>> UnitVector(Hand.vector(3, 4, 0))
+>>> Hand.vector(3, 4, 0).normalize()
 UnitVector[Hand](3/5, 4/5, 0)
 >>> q = Scalar.symbol("q")
 >>> Hand.vector(q.cos(), q.sin(), 0).normalize()

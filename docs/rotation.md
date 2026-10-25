@@ -2,21 +2,21 @@
 
 ## ${}^A R_B$
 
-${}^A R_B$ is the orientation of frame B relative to frame A. Its columns are the axes of
-B resolved in A, and it changes the frame an arrow is resolved in:
-^A v = ^A R_B ^B v. The code reads the course's sentence: the rotation *of* B
-*relative to* A.
+${}^A R_B$ maps a vector expressed in the source B to the same vector expressed in the
+target A: ^A v = ^A R_B ^B v. Its columns are the axes of B resolved in A. The code
+names the frames that way: `target=A`, `source=B`, `Rotation[A, B]`, so a chain reads
+like the composition ^A R_B ^B R_C = ^A R_C.
 
 ```python
 >>> from robotic import Frame, Rotation, Scalar
->>> class Base(Frame, latex="0"):
+>>> class Base(Frame, notation="0"):
 ...     """Fixed frame."""
->>> class Link1(Frame, latex="1"):
+>>> class Link1(Frame, notation="1"):
 ...     """Frame of the first link."""
 >>> class Tool(Frame):
 ...     """Frame of the tool."""
 >>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
->>> base_link1 = Rotation.about_z(q1, of=Link1, relative_to=Base)
+>>> base_link1 = Rotation.about_z(q1, target=Base, source=Link1)
 >>> base_link1
 Rotation[Base, Link1]([cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1])
 >>> print(base_link1.latex())
@@ -39,7 +39,7 @@ reference frame:
 
 ```python
 >>> axis = Base.vector(0, 0, 1).normalize()
->>> Rotation.about_axis(axis, q1, of=Link1)
+>>> Rotation.about_axis(axis, q1, source=Link1)
 Rotation[Base, Link1]([cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1])
 
 ```
@@ -50,7 +50,7 @@ Rotation[Base, Link1]([cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1])
 whose inner frames differ is a type error.
 
 ```python
->>> link1_tool = Rotation.about_x(q2, of=Tool, relative_to=Link1)
+>>> link1_tool = Rotation.about_x(q2, target=Link1, source=Tool)
 >>> base_tool = base_link1 @ link1_tool
 >>> (base_tool.inverse() @ base_tool).simplify()
 Rotation[Tool, Tool]([1, 0, 0], [0, 1, 0], [0, 0, 1])
@@ -60,24 +60,25 @@ Rotation[Tool, Tool]([1, 0, 0], [0, 1, 0], [0, 0, 1])
 On a vector of B, `R @ v` gives the same arrow resolved in A:
 
 ```python
->>> quarter_turn = Rotation.about_z(Scalar.pi() / 2, of=Tool, relative_to=Base)
+>>> quarter_turn = Rotation.about_z(Scalar.pi() / 2, target=Base, source=Tool)
 >>> quarter_turn @ Tool.vector(1, 0, 0)
 Vector[Base](0, 1, 0)
 
 ```
 
 A rotation does not act on points: it relates axes and says nothing about origins.
-Either write the coincident-origin assumption down, `Transform(R, 0, 0, 0) @ p`, or
-resolve the grounded vector, `R @ (p - Tool.origin())`.
+Either write the coincident-origin assumption down,
+`Transform(target=Base, source=Tool).with_rotation(R) @ p`, or resolve the grounded
+vector, `R @ (p - Tool.origin())`.
 
 A product of elementary rotations passes through frames the course writes RF', RF'';
 declare them like any frame:
 
 ```python
->>> class Prime(Frame, latex="'"):
+>>> class Prime(Frame, notation="'"):
 ...     """Frame after the first elementary rotation."""
->>> wrist = Rotation.about_z(q1, of=Prime, relative_to=Base) @ Rotation.about_x(
-...     q2, of=Tool, relative_to=Prime
+>>> wrist = Rotation.about_z(q1, target=Base, source=Prime) @ Rotation.about_x(
+...     q2, target=Prime, source=Tool
 ... )
 >>> wrist.entry(3, 3)
 cos(q2)
@@ -99,7 +100,7 @@ The axis satisfies R r = r, so it has the same components in A and in B.
 
 ```python
 >>> pi = Scalar.pi()
->>> solutions = Rotation.about_z(pi / 3, of=Tool, relative_to=Base).to_axis_angle()
+>>> solutions = Rotation.about_z(pi / 3, target=Base, source=Tool).to_axis_angle()
 >>> solutions.first
 AxisAngle(axis=UnitVector[Base](0, 0, 1), angle=pi/3)
 >>> solutions.second
@@ -123,9 +124,9 @@ A half turn and the identity are recognized exactly. For the identity any axis i
 valid; it is a `FreeAxis`, z unless you choose another:
 
 ```python
->>> Rotation.about_x(pi, of=Tool, relative_to=Base).to_axis_angle().first
+>>> Rotation.about_x(pi, target=Base, source=Tool).to_axis_angle().first
 AxisAngle(axis=UnitVector[Base](1, 0, 0), angle=pi)
->>> identity = Rotation.identity(of=Tool, relative_to=Base)
+>>> identity = Rotation.identity(target=Base, source=Tool)
 >>> identity.to_axis_angle().first
 AxisAngle(axis=FreeAxis[Base](0, 0, 1), angle=0)
 >>> identity.to_axis_angle(free_axis=Base.vector(1, 0, 0).normalize()).first

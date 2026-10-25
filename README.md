@@ -8,7 +8,7 @@ Everything is symbolic (sympy, behind a typed boundary): scalars, points and vec
 from robotic import Frame, Rotation, Scalar
 
 
-class Base(Frame, latex="0"):
+class Base(Frame, notation="0"):
     """Fixed frame."""
 
 
@@ -17,7 +17,7 @@ class Tool(Frame):
 
 
 q = Scalar.symbol("q")
-base_tool = Rotation.about_z(q, of=Tool, relative_to=Base)
+base_tool = Rotation.about_z(q, target=Base, source=Tool)
 approach = base_tool @ Tool.vector(1, 0, 0)  # Vector[Base](cos(q), sin(q), 0)
 ```
 

@@ -11,7 +11,7 @@ from spatialmath import SE3
 from robotic import Frame, Point, Rotation, Scalar, Transform, Vector
 
 
-class Base(Frame, latex="0"):
+class Base(Frame, notation="0"):
     """Fixed frame."""
 
 
@@ -45,18 +45,27 @@ def entries[A: Frame, B: Frame](transform: Transform[A, B]) -> list[list[str]]:
 
 
 def planar_arm() -> Transform[Base, Tool]:
-    base_link1 = Rotation.about_z(q1, of=Link1, relative_to=Base).with_origin(
-        Base.origin()
+    base_link1 = Transform(target=Base, source=Link1).with_rotation(
+        Rotation.about_z(q1, target=Base, source=Link1)
     )
-    link1_tool = Rotation.about_z(q2, of=Tool, relative_to=Link1).with_origin(
-        Link1.point(l1, 0, 0)
+    link1_tool = (
+        Transform(target=Link1, source=Tool)
+        .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
+        .with_translation(Link1.vector(l1, 0, 0))
     )
     return base_link1 @ link1_tool
 
 
+def base_link1_lifted() -> Transform[Base, Link1]:
+    return (
+        Transform(target=Base, source=Link1)
+        .with_rotation(Rotation.about_z(q1, target=Base, source=Link1))
+        .with_translation(Base.vector(0, 0, d1))
+    )
+
+
 def test_matrix_layout() -> None:
-    transform = Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), 0, 0, d1)
-    assert entries(transform) == [
+    assert entries(base_link1_lifted()) == [
         ["cos(q1)", "-sin(q1)", "0", "0"],
         ["sin(q1)", "cos(q1)", "0", "0"],
         ["0", "0", "1", "d1"],
@@ -65,25 +74,37 @@ def test_matrix_layout() -> None:
 
 
 def test_reading_the_translation_from_the_entries() -> None:
-    transform = Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), 0, 0, d1)
+    transform = base_link1_lifted()
     assert_type(transform.entry(3, 4), Scalar)
     assert str(transform.entry(3, 4)) == "d1"
 
 
-def test_building_from_a_rotation_and_three_numbers() -> None:
-    transform = Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), 0, 0, d1)
-    assert_type(transform, Transform[Base, Link1])
-    assert_type(transform.origin, Point[Base])
-    assert repr(transform.origin) == "Point[Base](0, 0, d1)"
+def test_rotation_and_translation_are_its_parts() -> None:
+    transform = base_link1_lifted()
     assert_type(transform.rotation, Rotation[Base, Link1])
+    assert_type(transform.translation, Vector[Base])
+    assert repr(transform.translation) == "Vector[Base](0, 0, d1)"
 
 
-def test_building_from_a_rotation_and_an_origin_point() -> None:
-    rotation = Rotation.about_z(q1, of=Link1, relative_to=Base)
-    transform = rotation.with_origin(Base.point(0, 0, d1))
+def test_identity_between_two_frames() -> None:
+    transform = Transform(target=Base, source=Link1)
     assert_type(transform, Transform[Base, Link1])
-    assert transform.rotation is rotation
-    assert repr(transform.origin) == "Point[Base](0, 0, d1)"
+    assert entries(transform) == [
+        ["1", "0", "0", "0"],
+        ["0", "1", "0", "0"],
+        ["0", "0", "1", "0"],
+        ["0", "0", "0", "1"],
+    ]
+
+
+def test_setting_a_part_returns_a_new_transform() -> None:
+    rotation = Rotation.about_z(q1, target=Base, source=Link1)
+    t = Transform(target=Base, source=Link1).with_rotation(rotation)
+    u = t.with_translation(Base.vector(0, 0, d1))
+    assert_type(u, Transform[Base, Link1])
+    assert repr(t.translation) == "Vector[Base](0, 0, 0)"
+    assert repr(u.translation) == "Vector[Base](0, 0, d1)"
+    assert u.rotation is rotation
 
 
 def test_forward_kinematics_chain() -> None:
@@ -110,7 +131,9 @@ def test_tip_of_a_planar_2r_arm() -> None:
 
 
 def test_translation_does_not_move_a_vector() -> None:
-    transform = Transform(Rotation.identity(of=Tool, relative_to=Base), 5, 0, 0)
+    transform = Transform(target=Base, source=Tool).with_translation(
+        Base.vector(5, 0, 0)
+    )
     moved = transform @ Tool.vector(1, 0, 0)
     assert_type(moved, Vector[Base])
     assert repr(moved) == "Vector[Base](1, 0, 0)"
