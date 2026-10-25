@@ -16,10 +16,10 @@
 
 ## 3. Geometry layer
 
-- [ ] 3.1 Implement frames, points and vectors with affine arithmetic and runtime frames (design D6, D7); verify the `geometry` spec scenarios pass and `tip + tip`, `2 * tip`, `-tip`, Tool + Base vectors and the bound widening are in the negative fixture and caught
-- [ ] 3.2 Implement dot, cross, norm, `UnitVector` built only by normalization, `normalize` and `FreeAxis` (design D6, D14, D20); verify the spec scenarios, including the zero vector raising and the simplified norm
-- [ ] 3.3 Implement simplification, the frame's `latex=` class keyword and LaTeX with the frame as left superscript (design D19); verify the default-name and declared-name scenarios, and the misspelled keyword caught by the negative fixture
-- [ ] 3.4 Document frames and affine arithmetic in `docs/` (two-fingertip example, homogeneous w table); verify every code block runs as written
+- [x] 3.1 Implement frames, points and vectors with affine arithmetic and runtime frames (design D6, D7); verify the `geometry` spec scenarios pass and `tip + tip`, `2 * tip`, `-tip`, Tool + Base vectors and the bound widening are in the negative fixture and caught
+- [x] 3.2 Implement dot, cross, norm, `UnitVector` built only by normalization, `normalize` and `FreeAxis` (design D6, D14, D20); verify the spec scenarios, including the zero vector raising and the simplified norm
+- [x] 3.3 Implement simplification, the frame's `latex=` class keyword and LaTeX with the frame as left superscript (design D19); verify the default-name and declared-name scenarios, and the misspelled keyword caught by the negative fixture
+- [x] 3.4 Document frames and affine arithmetic in `docs/` (two-fingertip example, homogeneous w table); verify every code block runs as written
 
 ## 4. Rotation layer
 

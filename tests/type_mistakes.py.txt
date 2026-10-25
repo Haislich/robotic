@@ -5,8 +5,30 @@ Lines marked `# known miss:` are mistakes ty does not catch today (design Risks)
 they must stay silent, so a ty upgrade that starts catching one is visible.
 """
 
-from robotic import Scalar
+from robotic import Frame, Scalar, UnitVector, Vector
+
+
+class Base(Frame):
+    """Fixed frame."""
+
+
+class Tool(Frame):
+    """Frame of the tool."""
+
 
 q1 = Scalar.symbol("q1")
+tip = Tool.point(1, 0, 0)
+approach = Tool.vector(1, 0, 0)
 
 q1 + "a"  # mistake: not a number
+tip + tip  # mistake: point plus point
+2 * tip  # mistake: scaling a point
+-tip  # mistake: negating a point
+Tool.vector(1, 0, 0) + Base.vector(1, 0, 0)  # mistake: mixing frames
+tip - Base.origin()  # mistake: point minus point of another frame
+approach_in_base: Vector[Base] = approach  # mistake: widening a bound value
+approach_anywhere: Vector[Frame] = approach  # mistake: widening a bound value to Frame
+widened: Vector[Frame] = Tool.vector(1, 0, 0)  # known miss: explicit inline widening
+UnitVector(1, 0, 0)  # mistake: unit vectors come only from a vector
+class Misspelled(Frame, latx="1"): ...  # mistake: misspelled LaTeX-name keyword
+class WrongName(Frame, latex=1): ...  # mistake: LaTeX name must be a string
