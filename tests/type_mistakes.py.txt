@@ -5,20 +5,36 @@ Lines marked `# known miss:` are mistakes ty does not catch today (design Risks)
 they must stay silent, so a ty upgrade that starts catching one is visible.
 """
 
-from robotic import Frame, Scalar, UnitVector, Vector
+from robotic import Frame, Rotation, Scalar, Transform, UnitVector, Vector
 
 
 class Base(Frame):
     """Fixed frame."""
 
 
+class Link1(Frame):
+    """Frame of the first link."""
+
+
 class Tool(Frame):
     """Frame of the tool."""
+
+
+class Prime(Frame):
+    """Intermediate frame."""
+
+
+class Second(Frame):
+    """Second intermediate frame."""
 
 
 q1 = Scalar.symbol("q1")
 tip = Tool.point(1, 0, 0)
 approach = Tool.vector(1, 0, 0)
+base_link1 = Rotation.about_z(q1, of=Link1, relative_to=Base)
+base_link1_pose = base_link1.with_origin(Base.origin())
+base_prime = Rotation.about_z(q1, of=Prime, relative_to=Base)
+second_tool = Rotation.about_x(q1, of=Tool, relative_to=Second)
 
 q1 + "a"  # mistake: not a number
 tip + tip  # mistake: point plus point
@@ -32,3 +48,19 @@ widened: Vector[Frame] = Tool.vector(1, 0, 0)  # known miss: explicit inline wid
 UnitVector(1, 0, 0)  # mistake: unit vectors come only from a vector
 class Misspelled(Frame, latx="1"): ...  # mistake: misspelled LaTeX-name keyword
 class WrongName(Frame, latex=1): ...  # mistake: LaTeX name must be a string
+base_link1 @ base_link1  # mistake: chain Base<-Link1 then Base<-Link1
+base_link1 @ Base.vector(1, 0, 0)  # mistake: rotation expects a Link1 vector
+Rotation.about_z(q1, of=Link1, relative_to=Base) @ Base.vector(1, 0, 0)  # mistake: inline wrong-frame vector
+base_link1 @ Link1.point(1, 0, 0)  # mistake: a rotation does not act on points
+base_prime @ second_tool  # mistake: skipped intermediate frame
+Rotation.about_axis(Base.vector(0, 0, 1).normalize(), q1, relative_to=Base)  # mistake: the axis fixes the reference frame
+base_link1.entry(0, 2)  # mistake: entries are counted from 1
+base_link1.entry(4, 1)  # mistake: a rotation has three rows
+base_link1.entry(1, int("3"))  # mistake: an int index is not a valid entry index
+Rotation.about_z(q1, of=Link1, relative_to=Base).with_origin(Link1.origin())  # mistake: origin in the wrong frame, inline
+base_link1.with_origin(Link1.origin())  # mistake: origin in the wrong frame, bound
+Transform(Rotation.about_z(q1, of=Link1, relative_to=Base), Link1.origin())  # mistake: the constructor takes numbers, not a point
+base_link1_pose @ Tool.point(1, 0, 0)  # mistake: transform expects a Link1 point
+base_link1_pose @ Base.origin()  # mistake: transform expects a Link1 point, not a Base one
+base_link1_pose @ base_link1_pose  # mistake: chain Base<-Link1 then Base<-Link1
+base_link1_pose.entry(5, 1)  # mistake: a transform has four rows

@@ -1,0 +1,137 @@
+# Rotations
+
+## ^A R_B
+
+^A R_B is the orientation of frame B relative to frame A. Its columns are the axes of
+B resolved in A, and it changes the frame an arrow is resolved in:
+^A v = ^A R_B ^B v. The code reads the course's sentence: the rotation *of* B
+*relative to* A.
+
+```python
+>>> from robotic import Frame, Rotation, Scalar
+>>> class Base(Frame, latex="0"):
+...     """Fixed frame."""
+>>> class Link1(Frame, latex="1"):
+...     """Frame of the first link."""
+>>> class Tool(Frame):
+...     """Frame of the tool."""
+>>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
+>>> base_link1 = Rotation.about_z(q1, of=Link1, relative_to=Base)
+>>> base_link1
+Rotation[Base, Link1]([cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1])
+>>> print(base_link1.latex())
+{}^{0}R_{1} = \begin{bmatrix} \cos{\left(q_{1} \right)} & - \sin{\left(q_{1} \right)} & 0 \\ \sin{\left(q_{1} \right)} & \cos{\left(q_{1} \right)} & 0 \\ 0 & 0 & 1 \end{bmatrix}
+
+```
+
+Entries are counted from 1, as the course writes r₁₃; an index outside 1 to 3 is a
+type error.
+
+```python
+>>> base_link1.entry(1, 2)
+-sin(q1)
+
+```
+
+`about_x`, `about_y` and `about_z` build the elementary rotations, `identity` the
+identity, and `about_axis` the rotation about a unit vector, whose frame is the
+reference frame:
+
+```python
+>>> axis = Base.vector(0, 0, 1).normalize()
+>>> Rotation.about_axis(axis, q1, of=Link1)
+Rotation[Base, Link1]([cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1])
+
+```
+
+## Composition, inverse and vectors
+
+`@` chains inner frames, ^A R_B ^B R_C = ^A R_C, and the inverse swaps them. A chain
+whose inner frames differ is a type error.
+
+```python
+>>> link1_tool = Rotation.about_x(q2, of=Tool, relative_to=Link1)
+>>> base_tool = base_link1 @ link1_tool
+>>> (base_tool.inverse() @ base_tool).simplify()
+Rotation[Tool, Tool]([1, 0, 0], [0, 1, 0], [0, 0, 1])
+
+```
+
+On a vector of B, `R @ v` gives the same arrow resolved in A:
+
+```python
+>>> quarter_turn = Rotation.about_z(Scalar.pi() / 2, of=Tool, relative_to=Base)
+>>> quarter_turn @ Tool.vector(1, 0, 0)
+Vector[Base](0, 1, 0)
+
+```
+
+A rotation does not act on points: it relates axes and says nothing about origins.
+Either write the coincident-origin assumption down, `Transform(R, 0, 0, 0) @ p`, or
+resolve the grounded vector, `R @ (p - Tool.origin())`.
+
+A product of elementary rotations passes through frames the course writes RF', RF'';
+declare them like any frame:
+
+```python
+>>> class Prime(Frame, latex="'"):
+...     """Frame after the first elementary rotation."""
+>>> wrist = Rotation.about_z(q1, of=Prime, relative_to=Base) @ Rotation.about_x(
+...     q2, of=Tool, relative_to=Prime
+... )
+>>> wrist.entry(3, 3)
+cos(q2)
+
+```
+
+## Axis-angle
+
+`to_axis_angle` extracts both solutions symbolically, without evaluating any symbol,
+following the course convention with the angle in (−π, π]:
+
+| Case | First | Second |
+|---|---|---|
+| regular, sin θ ≠ 0 | (r, θ), θ in (0, π) | (−r, −θ) |
+| half turn, θ = π | (r, π) | (−r, π) |
+| identity, θ = 0 | (a, 0), a free | (−a, 0) |
+
+The axis satisfies R r = r, so it has the same components in A and in B.
+
+```python
+>>> pi = Scalar.pi()
+>>> solutions = Rotation.about_z(pi / 3, of=Tool, relative_to=Base).to_axis_angle()
+>>> solutions.first
+AxisAngle(axis=UnitVector[Base](0, 0, 1), angle=pi/3)
+>>> solutions.second
+AxisAngle(axis=UnitVector[Base](0, 0, -1), angle=-pi/3)
+
+```
+
+For a symbolic rotation the result is the regular-case formulas, valid where
+sin θ ≠ 0:
+
+```python
+>>> solutions = base_link1.to_axis_angle()
+>>> solutions.first
+AxisAngle(axis=UnitVector[Base](0, 0, sin(q1)/Abs(sin(q1))), angle=atan2(Abs(sin(q1)), cos(q1)))
+>>> solutions.valid_when
+ValidityCondition(Abs(sin(q1)) != 0)
+
+```
+
+A half turn and the identity are recognized exactly. For the identity any axis is
+valid; it is a `FreeAxis`, z unless you choose another:
+
+```python
+>>> Rotation.about_x(pi, of=Tool, relative_to=Base).to_axis_angle().first
+AxisAngle(axis=UnitVector[Base](1, 0, 0), angle=pi)
+>>> identity = Rotation.identity(of=Tool, relative_to=Base)
+>>> identity.to_axis_angle().first
+AxisAngle(axis=FreeAxis[Base](0, 0, 1), angle=0)
+>>> identity.to_axis_angle(free_axis=Base.vector(1, 0, 0).normalize()).first
+AxisAngle(axis=FreeAxis[Base](1, 0, 0), angle=0)
+
+```
+
+Compiled, the validity condition becomes a flag with a tolerance (default `1e-9`); see
+[compilation](compilation.md).

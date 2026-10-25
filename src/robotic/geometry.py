@@ -6,7 +6,7 @@ vector, point +- vector is a point, vector +- vector is a vector, a number times
 vector is a vector. Anything else, and any mix of frames, is a type error.
 """
 
-from typing import ClassVar, Self, overload, override
+from typing import ClassVar, Self, final, overload, override
 
 from robotic.symbolic import Layout, Scalar, ScalarLike, Symbolic
 
@@ -296,6 +296,7 @@ class FreeAxis[F: Frame](UnitVector[F]):
     __slots__ = ()
 
 
+@final
 class Point[F: Frame](_Resolved[F]):
     """A point resolved in the frame `F`: its coordinates from the origin of `F`.
 

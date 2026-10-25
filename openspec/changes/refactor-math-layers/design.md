@@ -318,6 +318,17 @@ Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in
 
 Rejected: executing extracted code blocks with `exec` (ruff S102, and outputs unchecked).
 
+### D33. Rotation and transform construction
+
+- `Rotation(axis, angle, *, of)` is the public constructor: the rotation about a unit axis by Rodrigues' formula, which `about_axis` calls. Like D20, the public constructor itself keeps the invariant, so no public path builds a `Rotation` from nine arbitrary entries. Elementary rotations, the identity, products, inverses and simplification build the internal storage (D21) through a private factory of the class (`object.__new__`, attributes set on the fresh instance before it is returned).
+- `Rotation.relative_to` and `Rotation.of` expose the two frames, named after the D16 keywords; `Transform` needs them for its origin and LaTeX.
+- `Transform` stores its rotation and origin only (D21); `entry(row, column)` reads the 4x4 matrix from them, composition is `(R1 @ R2).with_origin(T1 @ o2)`, the action on a point is `o + R @ (p - O_B)`, the inverse `R^T.with_origin(O_B - R^T (o - O_A))`.
+- `Point` is `@final`. Points and vectors share a private storage base, so ty considered a class that is both; `final` rules it out and narrows `Point | Vector` in `match`.
+- `AxisAngle[F]` is a frozen dataclass with `axis` and `angle`; it is not `Symbolic` (the stub's choice): its axis and angle compile on their own (D13).
+- The skew-part axis of the regular case is `UnitVector(skew)`, so the normalization of D20 gives `sin(q)/Abs(sin(q))` for `Rz(q)` directly; the half-turn axis is the normalized column of R + I whose diagonal entry does not simplify to zero (column `k` of R + I is 2 r r_k). The structural singular cases (identity, half turn) are exact and valid everywhere: their `ValidityCondition` is `1 != 0`. A skew part that simplifies to zero with a trace proving neither case raises (D14: no answer can be given).
+
+Rejected: a public constructor from entries (a matrix that is not a rotation would type as one); a public `_Matrix3`-taking constructor (the same hole behind a private type); rotations storing their frames only as phantom types (D6).
+
 ## Risks / Trade-offs
 
 - [Explicit widening is not caught: `w: Vector[Frame] = Tool.vector(1, 0, 0)` inline, and user generic helpers `[G: Frame]` called with inline mixed arguments, pass ty] → Only the user can write these; the negative fixture records them as known misses so a ty upgrade that starts catching them is visible.

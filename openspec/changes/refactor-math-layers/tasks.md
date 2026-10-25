@@ -23,16 +23,16 @@
 
 ## 4. Rotation layer
 
-- [ ] 4.1 Implement the internal typed matrix storage and `entry(row, column)` counted from 1 (design D21, D26), then elementary, axis and identity rotations with the `of=` / `relative_to=` keywords, composition and inverse under the receiver-first rule (design D8, D9, D16); verify the `rotation` spec scenarios, matrices against the spatialmath oracle at sampled angles, and inline wrong-frame arguments, mismatched chains and an out-of-range entry index caught by the negative fixture
-- [ ] 4.2 Implement the rotation acting on vectors with `@` (design D22); verify the spec scenarios, and the wrong-source-frame vector, the rotation applied to a point (design D23) and the skipped intermediate frame (design D25) caught by the negative fixture
-- [ ] 4.3 Implement symbolic axis-angle as `AxisAngleSolutions` (`.first`, `.second` as `AxisAngle`, `.valid_when` as `ValidityCondition`, design D13, D18), tolerance `1e-9` and the free axis (design D13); verify the regular, half-turn, identity and symbolic scenarios, and oracle agreement at samples near θ = 0 and θ = π
-- [ ] 4.4 Document rotations and axis-angle in `docs/` (^A R_B notation, course convention for the two solutions); verify every code block runs as written
+- [x] 4.1 Implement the internal typed matrix storage and `entry(row, column)` counted from 1 (design D21, D26), then elementary, axis and identity rotations with the `of=` / `relative_to=` keywords, composition and inverse under the receiver-first rule (design D8, D9, D16); verify the `rotation` spec scenarios, matrices against the spatialmath oracle at sampled angles, and inline wrong-frame arguments, mismatched chains and an out-of-range entry index caught by the negative fixture
+- [x] 4.2 Implement the rotation acting on vectors with `@` (design D22); verify the spec scenarios, and the wrong-source-frame vector, the rotation applied to a point (design D23) and the skipped intermediate frame (design D25) caught by the negative fixture
+- [x] 4.3 Implement symbolic axis-angle as `AxisAngleSolutions` (`.first`, `.second` as `AxisAngle`, `.valid_when` as `ValidityCondition`, design D13, D18), tolerance `1e-9` and the free axis (design D13); verify the regular, half-turn, identity and symbolic scenarios, and oracle agreement at samples near θ = 0 and θ = π
+- [x] 4.4 Document rotations and axis-angle in `docs/` (^A R_B notation, course convention for the two solutions); verify every code block runs as written
 
 ## 5. Transform layer
 
-- [ ] 5.1 Implement transforms built by the constructor from a rotation and three numbers (design D17) and by `with_origin` on the rotation (design D9, D18), with rotation, origin and 4x4 matrix; verify the matrix-layout and three-numbers scenarios, and an inline wrong-frame origin given to the method and an inline point given to the constructor both caught by the negative fixture
-- [ ] 5.2 Implement composition, inverse and action on points and vectors (design D8); verify the planar 2R tip scenario, the translation-free vector scenario, the mismatched-chain line in the negative fixture, and matrices against the spatialmath oracle
-- [ ] 5.3 Document transforms in `docs/` (planar 2R forward kinematics end to end); verify every code block runs as written
+- [x] 5.1 Implement transforms built by the constructor from a rotation and three numbers (design D17) and by `with_origin` on the rotation (design D9, D18), with rotation, origin and 4x4 matrix; verify the matrix-layout and three-numbers scenarios, and an inline wrong-frame origin given to the method and an inline point given to the constructor both caught by the negative fixture
+- [x] 5.2 Implement composition, inverse and action on points and vectors (design D8); verify the planar 2R tip scenario, the translation-free vector scenario, the mismatched-chain line in the negative fixture, and matrices against the spatialmath oracle
+- [x] 5.3 Document transforms in `docs/` (planar 2R forward kinematics end to end); verify every code block runs as written
 
 ## 6. Compilation layer
 
