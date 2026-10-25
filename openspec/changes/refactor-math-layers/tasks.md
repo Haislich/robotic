@@ -2,9 +2,9 @@
 
 ## 1. Legacy removal
 
-- [ ] 1.1 Tag commit `41d2833` (name agreed with the user, e.g. `legacy`); verify `git rev-parse <tag>` prints `41d2833...`
-- [ ] 1.2 Delete `src/robotic/transformations.py`, `manipulator.py`, `utils.py`, `tests/test_axis.py`, `tests/test_rotation.py` and the five `midterms/midterm_*.ipynb`; ask the user about untracked `src/robotic/p.py` and the deleted `src/robotic/py.typed` before touching either; verify `git status` lists exactly these deletions
-- [ ] 1.3 Remove `loguru`, `pandas`, `pandas-stubs`, `matplotlib` from `pyproject.toml`; verify `uv lock` resolves, `uv sync` succeeds and `rg -l "loguru|pandas|matplotlib" src tests` finds nothing
+- [x] 1.1 Tag commit `41d2833` (name agreed with the user, e.g. `legacy`); verify `git rev-parse <tag>` prints `41d2833...`
+- [x] 1.2 Delete `src/robotic/transformations.py`, `manipulator.py`, `utils.py`, `tests/test_axis.py`, `tests/test_rotation.py` and the five `midterms/midterm_*.ipynb`; ask the user about untracked `src/robotic/p.py` and the deleted `src/robotic/py.typed` before touching either; verify `git status` lists exactly these deletions
+- [x] 1.3 Remove `loguru`, `pandas`, `pandas-stubs`, `matplotlib` from `pyproject.toml`; verify `uv lock` resolves, `uv sync` succeeds and `rg -l "loguru|pandas|matplotlib" src tests` finds nothing
 
 ## 2. Scalar layer
 
