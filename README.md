@@ -29,6 +29,7 @@ approach = base_tool @ Tool.vector(1, 0, 0)  # Vector[Base](cos(q), sin(q), 0)
 | `exams/`, `formulas/` | Notebooks and reference material |
 | `openspec/` | Design rationale and decisions |
 | `CLAUDE.md` | Working contract for Claude Code |
+| `memory/` | Claude Code's project memory and the latest session handoff (`memory/handoffs/`), kept in the repository to move between machines |
 
 ## Setup
 
@@ -40,6 +41,15 @@ uv run pre-commit install
 ```
 
 `uv sync` installs every dependency group: the library, development tools (`dev`) and notebook support (`notebooks`). In the notebooks, select the project's `.venv` as the kernel.
+
+To give Claude Code the project memory on a new machine, copy it into the memory folder of this checkout; the folder name is the checkout's absolute path with every `/` replaced by `-`:
+
+```bash
+target=~/.claude/projects/$(pwd | tr / -)/memory
+mkdir -p "$target" && cp memory/*.md "$target"
+```
+
+To continue the last session, attach `memory/handoffs/handoff-robotic-rounds.md` to a new chat and send "continue".
 
 ## Checks
 
