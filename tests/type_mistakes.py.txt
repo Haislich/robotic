@@ -1,0 +1,12 @@
+"""Mistakes the API must reject, run through ty by tests/test_negative_typing.py.
+
+Every line marked `# mistake:` must be a ty error and no other line may be one.
+Lines marked `# known miss:` are mistakes ty does not catch today (design Risks);
+they must stay silent, so a ty upgrade that starts catching one is visible.
+"""
+
+from robotic import Scalar
+
+q1 = Scalar.symbol("q1")
+
+q1 + "a"  # mistake: not a number

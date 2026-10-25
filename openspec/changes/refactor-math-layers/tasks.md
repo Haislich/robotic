@@ -8,11 +8,11 @@
 
 ## 2. Scalar layer
 
-- [ ] 2.1 Add the `sympy` entry to `banned-api` with the per-file exception for the boundary modules in `src/` (design D3; tests and notebooks stay uncovered by decision), after user approval of the configuration text; verify a probe module in `src/` outside the boundary importing sympy reports `TID251`, a probe inside the boundary does not, then delete the probes
-- [ ] 2.2 Build the negative type test (design D10): a fixture file with one mistake per line and a pytest test that runs ty on it and asserts every line is an error; verify by adding a correct line temporarily and seeing the test fail
-- [ ] 2.3 Implement the scalar, symbol creation, exact constants and elementary functions (design D2, D4, D5); verify the `scalar` spec scenarios pass as tests, `q + "a"` is in the negative fixture and caught, and `uv run ruff check` and `uv run ty check` are clean
-- [ ] 2.4 Add the test that walks every public signature and annotation and fails on any sympy type (spec `scalar`, "No untyped algebra in public signatures"); verify it fails on a temporary public method returning `sympy.Expr`, then remove that method
-- [ ] 2.5 Document the scalar layer in `docs/` (symbols, exact constants, the float policy with the `6.12323399573677e-17` example); verify every code block runs as written
+- [x] 2.1 Add the `sympy` entry to `banned-api` with the per-file exception for the boundary modules in `src/` (design D3; tests and notebooks stay uncovered by decision), after user approval of the configuration text; verify a probe module in `src/` outside the boundary importing sympy reports `TID251`, a probe inside the boundary does not, then delete the probes
+- [x] 2.2 Build the negative type test (design D10): a fixture file with one mistake per line and a pytest test that runs ty on it and asserts every line is an error; verify by adding a correct line temporarily and seeing the test fail
+- [x] 2.3 Implement the scalar, symbol creation, exact constants and elementary functions (design D2, D4, D5); verify the `scalar` spec scenarios pass as tests, `q + "a"` is in the negative fixture and caught, and `uv run ruff check` and `uv run ty check` are clean
+- [x] 2.4 Add the test that walks every public signature and annotation and fails on any sympy type (spec `scalar`, "No untyped algebra in public signatures"); verify it fails on a temporary public method returning `sympy.Expr`, then remove that method
+- [x] 2.5 Document the scalar layer in `docs/` (symbols, exact constants, the float policy with the `6.12323399573677e-17` example); verify every code block runs as written
 
 ## 3. Geometry layer
 

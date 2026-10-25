@@ -59,7 +59,12 @@ Rejected:
 
 | Exception | Scope | Reason |
 |---|---|---|
-| `TID251` ignored | the boundary modules only (exact paths fixed in task 2.1) | These modules are the boundary of D2: the only code allowed to touch untyped sympy values. |
+| `TID251` ignored | `src/robotic/symbolic.py` only (D29) | This module is the boundary of D2: the only code allowed to touch untyped sympy values. |
+| `SLF001` ignored | `src/robotic/symbolic.py` only (D29) | `Compiled(quantity, parameters)` reads the quantity's private layout and lambdifies the private sympy expressions of its scalars together, across classes. Probed with ruff 0.17.2: private access inside a class on a parameter annotated with that class (`other: Scalar`, `other: Rotation[From, Inner]`, `other: Self`) passes; access from another class, a module function or an unannotated loop variable is flagged. Privacy in the boundary is module-wide, the way `unsafe` is. |
+| `PLR0904` (`too-many-public-methods`) ignored | `src/robotic/symbolic.py` only | The rule counts dunders: `Scalar` has 24 public methods, all fixed by the spec (11 arithmetic operators for both sides, D2; 6 functions, D5; `pi`, `symbol`, `simplify`, `latex`, `is_zero`, `__init__`, `__repr__`). Rejected: raising `max-public-methods` globally (loosens the check everywhere); splitting `Scalar` (contradicts D5). |
+| `S404`, `S603` ignored | `tests/test_negative_typing.py` only | The negative type test (D10, D32) runs ty in a subprocess with fixed arguments and no shell, the same exception `.claude/hooks/` has. |
+
+The configuration names rules by name (`banned-api`, `private-member-access`), as ruff's preview rule `rule-codes-in-selectors` requires; codes are used in this document for brevity.
 
 Scope (user's decision): the ban holds in `src/`, where it is fully verifiable and where the non-boundary layers (geometry, rotation, transform) would otherwise drift into raw sympy unnoticed. It is lifted in tests and notebooks, a limit of the tool accepted as such: `tests/**` already ignores `TID251` for the oracle libraries and the ignore is per rule, not per banned module; notebooks are excluded from ruff (`extend-exclude = ["*.ipynb"]`). No configuration is added for either.
 
@@ -220,7 +225,7 @@ Rejected: a constructor taking components with a unit-length check (proving x² 
 
 ### D21. No public matrix type
 
-Rotations and transforms store their entries in an internal typed square-matrix class in a boundary module (D2, D3: the rotation and transform modules may not import sympy). No public signature returns it. `Rotation` and `Transform` are the only public matrix-like concepts (D1: one class per concept) and expose their entries as `Scalar`s through a typed accessor (D26) and as LaTeX.
+Rotations store their entries in an internal typed 3x3 class built from `Scalar` arithmetic only, so it needs no sympy and lives in the rotation module, outside the boundary (D29). A transform stores no matrix: its 4x4 entries are read from its rotation and origin. No public signature returns the storage. `Rotation` and `Transform` are the only public matrix-like concepts (D1: one class per concept) and expose their entries as `Scalar`s through a typed accessor (D26) and as LaTeX.
 
 Rejected: a public frameless `Matrix` (a free value that does everything `Rotation[To, From]` does while bypassing the frame types, the hole D6 closed for points and vectors; nothing in this change needs one, and the Jacobian change decides about a general matrix when it needs one).
 
@@ -281,6 +286,37 @@ Probed, `Rz(q)` regular-case formulas compiled with JAX under `jit` (axis z comp
 The exact flag misses the near-identity case (meaningless axis) and the half turn (right only because float sin(π) = 1.2e-16); the tolerance flag catches both.
 
 Rejected: an exact `≠ 0` flag (the two misses above); `Piecewise` branching in compiled code; forbidding an axis from compiling alone (reverses D13; see Risks).
+
+### D29. One boundary module
+
+`src/robotic/symbolic.py` holds `Symbolic`, `Scalar`, `Symbol`, `ScalarLike`, `Compiled` and `Numeric`; it is the only module importing sympy and calling `sympy.lambdify`. `geometry.py` (frames, points, vectors), `rotation.py` (rotations, their storage, axis-angle) and `transform.py` build on the public `Scalar` API only. `transform.py` imports `Rotation` for annotations only, so `Rotation.with_origin` can construct a `Transform` without an import cycle.
+
+Rejected: a separate boundary module per concern (scalar, matrix, compilation): every pair would need private access across modules; public accessors for raw entries (a "give me your sympy" method on every quantity) or a `Compiled` constructor taking pre-built parts (an explicit specialization could then attach any frame type to any numbers, against D20's principle that the public constructor guarantees the invariant).
+
+### D30. Points and vectors have a public frame-taking constructor
+
+`Point(frame, x, y, z)` and `Vector(frame, x, y, z)` exist because Python has no private constructors (as in D17 and D20); `Tool.point(...)` and `Tool.vector(...)` call them and stay the documented spelling. The frame has one source, the `frame` argument, so D9 holds: `Point(Tool, 1, 0, 0)` infers `Point[Tool]`.
+
+The `Point3(Tool, ...)` rejection (D6) stands as an API choice: docs and examples use the frame methods only.
+
+Rejected: building points through hidden attribute assignment after `object.__new__` (hidden mutation); a constructor taking an opaque components object (still public, adds a type with no meaning).
+
+### D31. Scalar construction, zero test and compile errors
+
+- `Scalar(value: ScalarLike)` builds a constant: `Scalar(2).sqrt()` is the spec's "square root of the scalar 2". Results of sympy operations are wrapped by a private factory inside the boundary; the public constructor never takes a sympy type (D2).
+- `Symbol(name)` is the constructor `Scalar.symbol(name)` calls, with the same fixed assumption (real). It exists because `Symbol` inherits `Scalar(value)`, which would otherwise let `Symbol(3)` wrap a constant typed as a symbol; one assumption set keeps D4's guarantee.
+- `Scalar.is_zero() -> bool`: true only when simplification proves the scalar identically zero. The layers outside the boundary need it for D20 (zero norm raises) and for the singular cases of axis-angle (D13); it is the only three-valued sympy question exposed, collapsed to "proved zero".
+- Reverse operators take `float` (ruff PYI041: `int | float` is redundant); `int` is still accepted by the type checker and stays exact at runtime. `ScalarLike` keeps `Scalar | int | float` as the documented alias.
+- Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols.
+
+Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above).
+
+### D32. Verification mechanisms
+
+- The negative fixture is `tests/type_mistakes.py.txt`, copied to a temporary `.py` and checked by ty from the project root. Lines end in `# mistake:` (must be an error) or `# known miss:` (must stay silent); every other line must be clean. A `.py` fixture in the tree would need exclusions in ty, the edit-time hook and pre-commit, three configurations for one file.
+- Docs pages are doctests (`>>>` inside fenced blocks), run by `tests/test_docs.py` with `doctest.testfile`: "runs as written" also checks the printed output, with no pytest configuration.
+
+Rejected: executing extracted code blocks with `exec` (ruff S102, and outputs unchecked).
 
 ## Risks / Trade-offs
 

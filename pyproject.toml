@@ -41,11 +41,13 @@ extend-exclude = ["*.ipynb"]
 [tool.ruff.lint]
 preview = true
 select = ["ALL"]
-ignore = ["COM812", "CPY001"]
+ignore = ["missing-trailing-comma", "missing-copyright-notice"]
 
 [tool.ruff.lint.per-file-ignores]
-".claude/hooks/*.py" = ["INP001", "S404", "S603"]
-"tests/**" = ["D1", "S101", "TID251"]
+".claude/hooks/*.py" = ["implicit-namespace-package", "suspicious-subprocess-import", "subprocess-without-shell-equals-true"]
+"src/robotic/symbolic.py" = ["too-many-public-methods", "private-member-access", "banned-api"]
+"tests/test_negative_typing.py" = ["suspicious-subprocess-import", "subprocess-without-shell-equals-true"]
+"tests/**" = ["D1", "assert", "banned-api"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -56,6 +58,7 @@ ignore-names = ["J", "R", "T"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "roboticstoolbox".msg = "Oracle library: import it only from tests/."
 "spatialmath".msg = "Oracle library: import it only from tests/."
+"sympy".msg = "Untyped algebra: import it only from src/robotic/symbolic.py, the typed boundary."
 
 [tool.ty.rules]
 all = "error"
