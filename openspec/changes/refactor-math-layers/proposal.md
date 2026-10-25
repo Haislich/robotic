@@ -32,9 +32,10 @@ None. `openspec/specs/` is empty.
 
 ## Impact
 
-- Code: `src/robotic/` rewritten from empty; `tests/test_axis.py` and `tests/test_rotation.py` replaced. `src/robotic/p.py` (untracked scratch) is the user's to keep or remove.
-- Configuration: `pyproject.toml` gains a `banned-api` entry for `sympy` with a per-file exception for the boundary modules, and loses four dependencies.
-- Notebooks: `exams/2024_09_19.ipynb` is the benchmark. Its cells the new API can express are rewritten against it; its cells that need `Manipulator`, DH or the Jacobian are deleted and come back with later changes (they stay reachable at the `legacy` tag).
+- Code: `src/robotic/` rewritten from empty (`symbolic.py`, `geometry.py`, `rotation.py`, `transform.py`, `__init__.py`); `tests/test_axis.py` and `tests/test_rotation.py` replaced by one test module per capability plus the negative type test (`tests/type_mistakes.py.txt`), the public-signature test and the docs test. `src/robotic/p.py` (untracked scratch) was deleted at the user's choice.
+- Configuration: `pyproject.toml` gains a `banned-api` entry for `sympy` and per-file exceptions for the boundary module and the negative type test (design D3), names its rules by name, and loses four dependencies; `uv.lock` follows.
+- Documentation: `docs/` gains one doctested page per layer (scalar, geometry, rotation, transform, compilation); `README.md` describes the new library.
+- Notebooks: `exams/2024_09_19.ipynb` is the benchmark. Its cells the new API can express are rewritten against it; its cells that need `Manipulator`, DH or the Jacobian are deleted and come back with later changes (they stay reachable at the `legacy` tag). The five `midterms/` notebooks are deleted.
 
 ## Out of Scope / Deferred
 

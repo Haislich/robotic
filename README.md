@@ -1,12 +1,32 @@
 # robotic
 
-Hand-implemented robot kinematics for studying the robotics course and verifying exam exercises: rotation representations (axis-angle, Euler angles), homogeneous transformations and manipulator Jacobians, computed both symbolically and numerically.
+Hand-implemented robot kinematics for studying the robotics course and verifying exam exercises, written so the code reads like a handwritten solution: frames are types, ^A R_B is `Rotation[A, B]`, and mixing frames or adding two points is a type error before anything runs.
+
+Everything is symbolic (sympy, behind a typed boundary): scalars, points and vectors resolved in a frame, rotations with their axis-angle solutions, and homogeneous transformations. Numbers come from compiling a quantity to a JAX function of a parameters dataclass, which works under `jax.jit`, `jax.vmap` and `jax.grad`. Euler angles, manipulators, DH tables and Jacobians come with later changes.
+
+```python
+from robotic import Frame, Rotation, Scalar
+
+
+class Base(Frame, latex="0"):
+    """Fixed frame."""
+
+
+class Tool(Frame):
+    """Frame of the tool."""
+
+
+q = Scalar.symbol("q")
+base_tool = Rotation.about_z(q, of=Tool, relative_to=Base)
+approach = base_tool @ Tool.vector(1, 0, 0)  # Vector[Base](cos(q), sin(q), 0)
+```
 
 | Path | Contents |
 |---|---|
 | `src/robotic/` | The library |
-| `tests/` | Tests |
-| `exams/`, `midterms/`, `formulas/` | Notebooks and reference material |
+| `tests/` | Tests, including the negative type test (`tests/type_mistakes.py.txt`) |
+| `docs/` | Usage and theory, one page per layer; every example runs as a doctest |
+| `exams/`, `formulas/` | Notebooks and reference material |
 | `openspec/` | Design rationale and decisions |
 | `CLAUDE.md` | Working contract for Claude Code |
 
