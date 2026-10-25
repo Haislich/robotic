@@ -14,6 +14,7 @@ def test_mixed_arithmetic_stays_typed() -> None:
     assert_type(q * q, Scalar)
     assert_type(2 * q - 0.5, Scalar)
     assert_type(-q, Scalar)
+    assert_type(q.simplify(), Symbol)
     assert_type(2**q, Scalar)
     assert_type(q / 2, Scalar)
     assert [str(value) for value in (q + 1, 1 + q, q * q, 2 * q - 0.5, -q)] == [

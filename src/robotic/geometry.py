@@ -196,8 +196,8 @@ class Vector[F: Frame](_Resolved[F]):
         """
         return Vector(self._x * factor, self._y * factor, self._z * factor, self._frame)
 
-    def __rmul__(self, factor: float) -> Vector[F]:
-        """Scale by a number written on the left.
+    def __rmul__(self, factor: Scalar | float) -> Vector[F]:
+        """Scale by a number written on the left, as in `l1 * x_axis`.
 
         Returns:
             The scaled vector, in the same frame.

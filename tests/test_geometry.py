@@ -80,6 +80,14 @@ def test_building_a_unit_vector_normalizes() -> None:
     )
 
 
+def test_symbolic_factor_on_the_left() -> None:
+    l1 = Scalar.symbol("l1")
+    x_axis = Tool.vector(1, 0, 0)
+    assert_type(l1 * x_axis, Vector[Tool])
+    assert repr(l1 * x_axis) == "Vector[Tool](l1, 0, 0)"
+    assert repr(x_axis * l1) == "Vector[Tool](l1, 0, 0)"
+
+
 def test_negating_a_unit_vector_keeps_it_unit() -> None:
     unit = Tool.vector(3, 4, 0).normalize()
     assert_type(-unit, UnitVector[Tool])

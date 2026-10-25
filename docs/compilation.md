@@ -131,6 +131,17 @@ configuration and the frame is kept:
 
 ```
 
+Derivatives are taken of `.components`, the bare numbers. The derivative of a rotation
+matrix is not a rotation, so it does not come back as a `Numeric[Rotation[...]]`:
+
+```python
+>>> turn = Rotation.about_z(q1, target=Base, source=Link1).lambdify(Joint)
+>>> derivative = jax.jacrev(lambda value: turn(Joint(q1=value)).components)(0.0)
+>>> derivative.shape, float(derivative[1, 0]), float(derivative[0, 1])
+((3, 3), 1.0, -1.0)
+
+```
+
 An array given directly, outside `vmap`, is rejected when JAX traces:
 
 ```python

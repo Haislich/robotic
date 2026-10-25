@@ -1,6 +1,7 @@
 """Scenarios of the `transform` capability, with spatialmath as the oracle."""
 
 import math
+import operator
 from dataclasses import dataclass
 from typing import assert_type
 
@@ -138,6 +139,13 @@ def test_translation_does_not_move_a_vector() -> None:
     assert_type(moved, Vector[Base])
     assert repr(moved) == "Vector[Base](1, 0, 0)"
     assert repr(transform @ Tool.point(1, 0, 0)) == "Point[Base](6, 0, 0)"
+
+
+def test_a_transform_rejects_another_operand_at_runtime() -> None:
+    with pytest.raises(TypeError, match="@"):
+        operator.matmul(
+            base_link1_lifted(), Rotation.identity(target=Link1, source=Tool)
+        )
 
 
 def test_simplify_keeps_frames() -> None:

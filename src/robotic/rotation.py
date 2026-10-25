@@ -397,6 +397,8 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
             case Vector():
                 x, y, z = self._matrix.column_product(other.x, other.y, other.z)
                 return self._target.vector(x, y, z)
+            case _:
+                return NotImplemented
 
     def inverse(self) -> Rotation[Source, Target]:
         """The inverse ^B R_A, the transpose.

@@ -5,6 +5,7 @@ This is the only module that touches sympy. Every other module builds on the pub
 """
 
 import dataclasses
+import operator
 import typing
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -125,6 +126,15 @@ class Scalar(Symbolic):
             case float():
                 return sympy.Float(value)
 
+    def _combined(
+        self,
+        other: ScalarLike,
+        operation: Callable[[sympy.Expr, sympy.Expr], sympy.Expr],
+    ) -> Scalar:
+        if not isinstance(other, Scalar | int | float):
+            return NotImplemented
+        return Scalar._wrap(operation(self._expression, Scalar._expression_of(other)))
+
     @classmethod
     def symbol(cls, name: str) -> Symbol:
         """Create the real symbol with this name.
@@ -152,7 +162,7 @@ class Scalar(Symbolic):
         Returns:
             `self + other`.
         """
-        return Scalar._wrap(self._expression + Scalar._expression_of(other))
+        return self._combined(other, operator.add)
 
     def __radd__(self, other: float) -> Scalar:
         """Add from the left.
@@ -160,7 +170,7 @@ class Scalar(Symbolic):
         Returns:
             `other + self`.
         """
-        return Scalar._wrap(Scalar._expression_of(other) + self._expression)
+        return self._combined(other, lambda mine, theirs: theirs + mine)
 
     def __sub__(self, other: ScalarLike) -> Scalar:
         """Subtract.
@@ -168,7 +178,7 @@ class Scalar(Symbolic):
         Returns:
             `self - other`.
         """
-        return Scalar._wrap(self._expression - Scalar._expression_of(other))
+        return self._combined(other, operator.sub)
 
     def __rsub__(self, other: float) -> Scalar:
         """Subtract from a number.
@@ -176,7 +186,7 @@ class Scalar(Symbolic):
         Returns:
             `other - self`.
         """
-        return Scalar._wrap(Scalar._expression_of(other) - self._expression)
+        return self._combined(other, lambda mine, theirs: theirs - mine)
 
     def __mul__(self, other: ScalarLike) -> Scalar:
         """Multiply.
@@ -184,7 +194,7 @@ class Scalar(Symbolic):
         Returns:
             `self * other`.
         """
-        return Scalar._wrap(self._expression * Scalar._expression_of(other))
+        return self._combined(other, operator.mul)
 
     def __rmul__(self, other: float) -> Scalar:
         """Multiply from the left.
@@ -192,7 +202,7 @@ class Scalar(Symbolic):
         Returns:
             `other * self`.
         """
-        return Scalar._wrap(Scalar._expression_of(other) * self._expression)
+        return self._combined(other, lambda mine, theirs: theirs * mine)
 
     def __truediv__(self, other: ScalarLike) -> Scalar:
         """Divide; integer quotients stay exact fractions.
@@ -200,7 +210,7 @@ class Scalar(Symbolic):
         Returns:
             `self / other`.
         """
-        return Scalar._wrap(self._expression / Scalar._expression_of(other))
+        return self._combined(other, operator.truediv)
 
     def __rtruediv__(self, other: float) -> Scalar:
         """Divide a number.
@@ -208,7 +218,7 @@ class Scalar(Symbolic):
         Returns:
             `other / self`.
         """
-        return Scalar._wrap(Scalar._expression_of(other) / self._expression)
+        return self._combined(other, lambda mine, theirs: theirs / mine)
 
     def __pow__(self, exponent: ScalarLike) -> Scalar:
         """Raise to a power.
@@ -216,7 +226,7 @@ class Scalar(Symbolic):
         Returns:
             `self ** exponent`.
         """
-        return Scalar._wrap(self._expression ** Scalar._expression_of(exponent))
+        return self._combined(exponent, operator.pow)
 
     def __rpow__(self, base: float) -> Scalar:
         """Raise a number to this power.
@@ -224,7 +234,7 @@ class Scalar(Symbolic):
         Returns:
             `base ** self`.
         """
-        return Scalar._wrap(Scalar._expression_of(base) ** self._expression)
+        return self._combined(base, lambda mine, theirs: theirs**mine)
 
     def __neg__(self) -> Scalar:
         """Negate.
@@ -337,6 +347,15 @@ class Symbol(Scalar):
             name: The symbol's name; equal names give the same symbol.
         """
         self._expression = sympy.Symbol(name, real=True)
+
+    @override
+    def simplify(self) -> Self:
+        """A symbol is already simplest.
+
+        Returns:
+            The symbol itself.
+        """
+        return self
 
 
 class MissingParameterError(ValueError):

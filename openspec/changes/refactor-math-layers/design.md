@@ -152,7 +152,11 @@ Rejected: a bare `jax.Array` (frame lost).
 
 `jax_enable_x64` is set when `robotic` is imported, for the whole process (user's decision, review round 2). The library checks exam values against symbolic results, where float32 rounding would show as false mismatches. The side effect is stated in `docs/compilation.md` and `README.md`. Rejected: enabling x64 only inside `Compiled.__call__` (not probed; expected to fail under the caller's own `jit` / `vmap`, whose input dtypes are fixed when the outer trace runs, outside the scope); requiring the caller to enable it (a forgotten flag silently gives float32).
 
-The printed form of a `Numeric` works on concrete components only. Under tracing, the components are tracers, and printing them must not fail (review round 2: `.tolist()` raised `ConcretizationTypeError` inside `jax.jit`).
+The printed form of a `Numeric` lists concrete components and shows a tracer as JAX prints it, so printing works under tracing (review round 2: `.tolist()` raised `ConcretizationTypeError` inside `jax.jit`).
+
+`Numeric._unflatten` builds `Numeric[Symbolic](...)` through the subscripted alias (review round 3, Claude's decision). Probed in ty 0.0.91: a plain `Numeric(...)` infers `Numeric[Unknown]` and is an `unsound-return-statement` (and, bound to an annotated local, an `unsound-assignment`); annotating the return `Numeric[Any]` is banned by ruff's `any-type`. The alias dispatch costs microseconds and runs when JAX unflattens at a trace boundary, not on each compiled call.
+
+Derivatives are taken of `.components`, not of the `Numeric` (review round 3, Claude's decision; the user delegated JAX-side decisions): `jax.jacrev(lambda q: compiled(P(q)).components)`. `jax.jacrev` and `jax.jacfwd` of the whole result fail on its boolean `valid` child (D28). Rejected: dropping the flag child from results without a condition (the runtime branch D28 avoids, and axis-angle results would still fail); making `Numeric` differentiable as a whole (the derivative would come back labelled `Numeric[Rotation[A, B]]` while holding dR/dq, which is not a rotation: the type would claim a meaning the numbers lack, against this decision's principle).
 
 ### D13. Axis-angle is symbolic
 
@@ -268,6 +272,8 @@ Rejected: `.rotate(v)` (the active reading, the arrow moves, contradicts D8's pa
 
 `Rotation @ Point` is a type error: a rotation relates axes and says nothing about origins, so with offset origins the result would have the right type and the wrong value (identity rotation, origin of B at (5, 0, 0) in A: the tip (1, 0, 0) in B is (6, 0, 0) in A, not (1, 0, 0)). The two honest readings stay explicit: `Transform(target=Base, source=Tool).with_rotation(R) @ p` writes the coincident-origin assumption down; `R @ (p - B.origin())` resolves the grounded vector (D7). Probed in ty 0.0.91: both infer `Point[Base]` and `Vector[Base]`; `R @ tip` is an error.
 
+At runtime, `Rotation.__matmul__` and `Transform.__matmul__` return `NotImplemented` for any other operand, so `R @ point` raises Python's `TypeError` instead of returning `None` (review round 3, user's decision).
+
 Rejected: allowing it under an implicit coincident-origin assumption.
 
 ### D24. Euler angles and RPY are deferred
@@ -335,10 +341,11 @@ Rejected: building points through hidden attribute assignment after `object.__ne
 - `Scalar(value: ScalarLike)` builds a constant: `Scalar(2).sqrt()` is the spec's "square root of the scalar 2". Results of sympy operations are wrapped by a private factory inside the boundary; the public constructor never takes a sympy type (D2).
 - `Symbol(name)` is the constructor `Scalar.symbol(name)` calls, with the same fixed assumption (real). It exists because `Symbol` inherits `Scalar(value)`, which would otherwise let `Symbol(3)` wrap a constant typed as a symbol; one assumption set keeps D4's guarantee.
 - `Scalar.is_zero() -> bool`: true only when simplification proves the scalar identically zero. The layers outside the boundary need it for D20 (zero norm raises) and for the singular cases of axis-angle (D13); it is the only three-valued sympy question exposed, collapsed to "proved zero".
-- Reverse operators take `float` (ruff PYI041: `int | float` is redundant); `int` is still accepted by the type checker and stays exact at runtime. `ScalarLike` keeps `Scalar | int | float` as the documented alias.
+- Reverse operators take `float` (ruff PYI041: `int | float` is redundant); `int` is still accepted by the type checker and stays exact at runtime. `ScalarLike` keeps `Scalar | int | float` as the documented alias. `Vector.__rmul__` takes `Scalar | float`, so a symbolic factor written on the left, `l1 * x_axis` as the exam writes it, is a vector (review round 3: it was a ty error and a runtime crash).
+- `Symbol.simplify()` returns the symbol itself, typed `Self`: a symbol is already simplest, and `Scalar.simplify -> Scalar` would otherwise give `Symbol` a `Scalar` result against `Symbolic.simplify -> Self` (review round 3).
 - Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols. `ParameterShapeError(ValueError)` is raised at trace time for a field holding an array outside `vmap` (D11).
 
-Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above); a runtime fallback for values outside `ScalarLike`, such as `np.float32` (review round 2: ty already rejects them, and a runtime check would duplicate the type system).
+Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above); a runtime check that raises for values outside `ScalarLike`, such as `np.float32` (review round 2: ty already rejects them). Revised in review round 3: every operator returns `NotImplemented` for an operand outside `ScalarLike`, as Python's operator protocol requires; this is not a duplicate of the type check, it is what lets `l1 * x_axis` reach `Vector.__rmul__` (before, `Scalar.__mul__` wrapped `None` and crashed).
 
 ### D32. Verification mechanisms
 

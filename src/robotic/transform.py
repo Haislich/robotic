@@ -126,6 +126,8 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
                 )
             case Vector():
                 return self._rotation @ other
+            case _:
+                return NotImplemented
 
     def inverse(self) -> Transform[Source, Target]:
         """The inverse ^B T_A, with rotation R^T and translation -R^T t.

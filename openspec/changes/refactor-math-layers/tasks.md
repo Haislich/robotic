@@ -76,6 +76,15 @@ Completed tasks 3.3, 4.1 and 5.1 are superseded where they name `latex=`, `of=` 
 - [x] 10.5 State the process-wide `jax_enable_x64` in `docs/compilation.md` and `README.md` (design D12); verify `tests/test_docs.py` passes
 - [x] 10.6 Verify the whole change as in 8.2
 
+## 11. Review round 3
+
+- [x] 11.1 A symbolic factor on the left scales a vector (design D31): every `Scalar` operator returns `NotImplemented` for an operand outside `ScalarLike`, and `Vector.__rmul__` takes `Scalar | float`; verify a test of `l1 * x_axis` (ty-clean, `Vector[A](l1, 0, 0)`) fails first, then passes, and `x_axis * l1` is unchanged
+- [x] 11.2 `Rotation.__matmul__` and `Transform.__matmul__` return `NotImplemented` for other operands (design D23); verify a test that `R @ point` raises `TypeError` at runtime fails first, then passes, and the negative fixture still reports it
+- [x] 11.3 `Symbol.simplify` returns the symbol, typed `Self` (design D31); verify `assert_type(q.simplify(), Symbol)`
+- [x] 11.4 Keep `Numeric._unflatten` on the explicit `Numeric[Symbolic](...)` and record why (design D12); verify ty is clean and the jit, vmap and grad tests pass
+- [x] 11.5 Document that derivatives are taken of `.components` in `docs/compilation.md`, with a `jax.jacrev` doctest of a compiled rotation (design D12); verify `tests/test_docs.py` passes
+- [x] 11.6 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.

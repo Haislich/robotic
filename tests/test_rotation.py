@@ -1,6 +1,7 @@
 """Scenarios of the `rotation` capability, with spatialmath as the oracle."""
 
 import math
+import operator
 from dataclasses import dataclass
 from typing import assert_type
 
@@ -184,6 +185,12 @@ def test_chosen_free_axis() -> None:
     )
     assert repr(solutions.first.axis) == "FreeAxis[Base](1, 0, 0)"
     assert repr(solutions.second.axis) == "FreeAxis[Base](-1, 0, 0)"
+
+
+def test_a_rotation_rejects_a_point_at_runtime() -> None:
+    rotation = Rotation.about_z(q1, target=Base, source=Link1)
+    with pytest.raises(TypeError, match="@"):
+        operator.matmul(rotation, Link1.point(1, 0, 0))
 
 
 def test_simplify_keeps_frames() -> None:
