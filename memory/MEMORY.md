@@ -1,10 +1,11 @@
-- [Refactor state](refactor-design-state.md) — rounds 1-2 applied and committed 2026-10-25 (d8c0b33), kept open on purpose, round 3 due
+- [Refactor state](refactor-design-state.md) — rounds 1-3 applied; 2026-10-26 review: revise it against openspec/intent.md next
 - [Fix algorithm bugs in the refactor](algorithm-bugs-are-users-job.md) — user reversed "keep the bugs"; fix them, name each fix
 - [Functional style, few free functions, wise dicts/tuples](no-free-functions-tuples-dicts.md) — methods on immutable types; dicts only for truly dynamic keys
 - [Narrow types, Protocols, no asserts](narrow-types-protocols-no-asserts.md) — type system does the narrowing, never assert
 - [Naming and immutability intent](naming-and-immutability-intent.md) — full-word method names; no language clashes, `from_` included; immutable = no hidden traceless mutation
 - [One decision at a time](one-decision-at-a-time.md) — one concept, one question per message; no option dumps
 - [Prefer code in explanations](prefer-code-in-explanations.md) — show code sketches instead of prose when clearer
-- [Symbolic side mirrors exam solutions](symbolic-side-mirrors-exam.md) — priority: exam-like symbolic clarity; numeric secondary
-- [Apply runs autonomously](apply-runs-autonomously.md) — during /opsx:apply, decide small reversible things; stop only for deviations or irreversible steps
-- [JAX decisions are delegated](jax-decisions-delegated.md) — decide compiled/JAX questions, record in design.md, report in one line
+- [Symbolic side mirrors exam solutions](symbolic-side-mirrors-exam.md) — exam-like symbolic clarity; symbolic and numeric have distinct jobs, neither secondary (intent I6)
+- [Apply runs autonomously](apply-runs-autonomously.md) — origin of CLAUDE.md Roles: decide small reversible things during apply
+- [JAX decisions are delegated](jax-decisions-delegated.md) — origin of CLAUDE.md Roles: implementation choices are Claude's, with context
+- [Memory always current](memory-always-current.md) — update memory/ and the handoff as things change; user switches PCs

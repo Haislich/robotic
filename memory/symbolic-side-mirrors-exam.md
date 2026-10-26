@@ -1,12 +1,13 @@
 ---
 name: symbolic-side-mirrors-exam
-description: The robotics refactor's priority is the symbolic API reading like an exam solution; numeric side is secondary
+description: "The symbolic API reads like an exam solution; symbolic and numeric have distinct jobs, neither is secondary (intent I1, I6)"
 metadata:
   type: user
+  modified: 2026-10-26
 ---
 
-The symbolic API should read like the user's handwritten Robotics 1 exam solutions: semantics crystal clear, verbosity accepted. Numeric semantics (frames on JAX results) are welcome but not pressing; at the numeric step the user wants raw power.
+Superseded by `openspec/intent.md` (I1 and I6), which is the source; read it there. In short: the symbolic API reads like the user's handwritten Robotics 1 exam solutions, semantics clear even if verbose; the numeric side is for simulation, a different job, not a secondary one. Typing and semantics cost is paid on the symbolic side so the numeric side is unconstrained, and numeric speed is a requirement.
 
-**Why:** user (2026-10-24): "what was pressing and important to me was the symbolic part ... because it mapped perfectly to how I would write my solutions for the exam, making the semantics of the code crystal clear even if verbose in some points".
+**Origin:** user (2026-10-24): "what was pressing and important to me was the symbolic part ... because it mapped perfectly to how I would write my solutions for the exam". This memory then ranked the numeric side below the symbolic one; the user corrected it on 2026-10-26: "Il numerico sembra un afterthought ma non ha meno importanza, è che assolve un compito differente".
 
-**How to apply:** when trading off, favor clarity of the symbolic API over brevity; don't spend design effort on numeric-side typing beyond the thin result. Related: [[refactor-design-state]].
+**How to apply:** cite I1/I6 in design decisions; never treat numeric-side work as optional. Related: [[refactor-design-state]].

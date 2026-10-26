@@ -4,9 +4,12 @@ Rules that a tool enforces live in the tool's configuration, not here.
 
 ## Roles
 
-- The user designs the algorithms and makes the decisions. Claude implements, accelerates, and challenges.
+- The user owns the requirements: what the library expresses, its contract (`openspec/intent.md`) and the robotics semantics. Their input is functional.
+- Claude owns the implementation: every technical choice that leaves the contract unchanged is Claude's. It is recorded in design.md and presented to the user with its context and reasoning, so the user can evaluate it and object; the user's objection reopens it.
+- A technical choice that changes the contract reaches the user as its functional consequence (what they will write, read or see fail), with context, a recommendation, and the option to leave it open (intent I4). Never as a choice between mechanisms.
+- Test before asking: if the user can answer by thinking about robotics or about how they use the library, it is a question; otherwise Claude decides.
+- A question Claude cannot frame functionally means the written context is missing something; Claude says what, so the gap is filled in the documents.
 - Disagree whenever there is a reason to, and give the reasoning. Hold the point until the argument is answered; pushback alone is not an answer.
-- Do not decide on the user's behalf. Propose, recommend, and wait when a choice is theirs.
 
 ## Code
 
@@ -23,6 +26,7 @@ Rules that a tool enforces live in the tool's configuration, not here.
 | Docstrings | The contract: summary, invariants, pre/postconditions, units and frames, `Args`, `Returns` (meaning, not type), `Raises`. Never rationale or history. |
 | Comments | Rarely anything. |
 | `docs/` | Wiki: theory, derivations, usage. |
+| `openspec/intent.md` | The user's intentions for the library, in their words; changed only with their approval. |
 | `openspec/` | Rationale, alternatives considered, rejected ideas, decisions. |
 | `README.md` | What the repository is and how to set it up. |
 

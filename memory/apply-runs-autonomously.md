@@ -1,15 +1,13 @@
 ---
 name: apply-runs-autonomously
-description: "During /opsx:apply, proceed on sensible reversible defaults instead of gating on small questions"
+description: "Origin of the Roles rule in CLAUDE.md: during /opsx:apply, decide small reversible things and report them"
 metadata:
-  node_type: memory
   type: feedback
-  originSessionId: db66abd4-09fa-4526-9a5d-0fd2cd38b7a5
-  modified: 2026-10-25T01:07:49.922Z
+  modified: 2026-10-26
 ---
 
-During implementation (`/opsx:apply`), do not stop to ask about small, reversible choices (tag names, branch, local commits, file housekeeping). Pick the sensible default, record it, report it in the summary.
+Superseded by the Roles section of `CLAUDE.md` (change `record-user-intent`, 2026-10-26), which is the rule; read it there. Deviations from `design.md` or `openspec/intent.md` still stop the apply (`openspec/config.yaml`), and irreversible actions (deleting untracked files, pushing, committing) still wait for the user.
 
-**Why:** 2026-10-25 the user, after Claude asked a gating question before group 1: "Why are you asking me so much consern you should be in auto mode".
+**Origin:** 2026-10-25 the user, after Claude asked a gating question before group 1: "Why are you asking me so much consern you should be in auto mode".
 
-**How to apply:** still stop for real deviations from `design.md` / specs (openspec/config.yaml rule) and for irreversible actions (deleting untracked files, pushing). Everything else: decide, act, list it at the end. Overrides the "one question at a time" pacing of [[one-decision-at-a-time]] for implementation mechanics, not for design decisions.
+**How to apply:** follow CLAUDE.md Roles; list what was decided in the end-of-apply summary. Related: [[jax-decisions-delegated]], [[one-decision-at-a-time]].

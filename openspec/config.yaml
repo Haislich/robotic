@@ -1,18 +1,25 @@
 schema: spec-driven
 
 context: |
-  Personal robotics course repository (Python 3.14, uv). The user designs and
-  decides; Claude implements. CLAUDE.md is the working contract and applies to
-  every artifact. Robotics algorithms are implemented by hand in src/;
-  roboticstoolbox and spatialmath are test-only oracles.
+  Personal robotics course repository (Python 3.14, uv). The user owns the
+  requirements and the contract; Claude owns the implementation (CLAUDE.md,
+  Roles). CLAUDE.md is the working contract and applies to every artifact.
+  Robotics algorithms are implemented by hand in src/; roboticstoolbox and
+  spatialmath are test-only oracles.
+  openspec/intent.md holds the user's intentions for the library (I0-I7), in
+  their words. Read it before writing any artifact; it outranks design
+  decisions, and a decision that contradicts it is a deviation.
 
 rules:
   proposal:
     - List what is out of scope or deferred, so deferred ideas are not lost.
+    - Name the intentions of openspec/intent.md the change serves.
   design:
     - Every decision lists the alternatives considered and why each was rejected.
     - Every lint or type-check exception the change introduces is listed with its reason.
     - Rationale lives here, never in docstrings or code comments.
+    - Every decision names the intention of openspec/intent.md it serves.
+    - A trade-off that goes against an intention is recorded as a violation of that intention, named, and only after user approval; never as an accepted risk.
   tasks:
     - Every task states how its completion is verified.
     - Tasks producing text the user owns (contracts, rules, configuration policy) are done only after user approval.
@@ -23,6 +30,8 @@ operations:
       - A deviation is anything that invalidates a decision in design.md, a spec requirement, or the proposal's scope. On a deviation, stop, explain it, propose the artifact revision, and wait for the user. After approval, update the artifacts before writing more code and re-check completed tasks against the revision.
       - Mechanical adjustments (renames, task reordering, helper extraction) are not deviations; list them in the end-of-task summary.
       - Decisions made during implementation that do not invalidate earlier ones are recorded in design.md when they are made.
+      - A design decision that contradicts openspec/intent.md is a deviation.
   archive:
     guidance:
       - Before archiving, reconcile. Compare the full diff with the proposal and design, review the repository for inconsistencies the change introduced (naming, duplicated helpers, sibling modules), and update design.md to describe what was built, keeping superseded ideas as rejected alternatives.
+      - Reconciliation also compares design.md with openspec/intent.md and lists every recorded violation.
