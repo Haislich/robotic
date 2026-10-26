@@ -31,10 +31,12 @@ Building a transform SHALL start from its target and source frames, giving the i
 #### Scenario: Rotation in the wrong frames, inline
 - **WHEN** the code sets, inline, a rotation from `Tool` to `Base` on the transform from `Link1` to `Base`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 #### Scenario: Translation in the wrong frame, inline
 - **WHEN** the code sets, inline, a vector in `Link1` as the translation of the transform from `Link1` to `Base`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: Transform composition
 Composing ^A T_B with ^B T_C SHALL give ^A T_C, and composing transforms whose inner frames differ SHALL be a type error.
@@ -46,6 +48,7 @@ Composing ^A T_B with ^B T_C SHALL give ^A T_C, and composing transforms whose i
 #### Scenario: Mismatched chain
 - **WHEN** the code composes a transform from `Link1` to `Base` with itself
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: Transform inverse
 The inverse of ^A T_B SHALL be ^B T_A, with rotation Rᵀ and translation −Rᵀ t.
@@ -74,6 +77,7 @@ Applying a transform to a point or vector not in its source frame SHALL be a typ
 #### Scenario: Point in the wrong frame
 - **WHEN** a transform from `Link1` to `Base` is applied to a point in `Tool`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: LaTeX and simplification for transforms
 A transform SHALL provide simplification keeping both frames, and a LaTeX rendering of ^A T_B.

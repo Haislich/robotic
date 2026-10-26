@@ -39,26 +39,35 @@ Within one frame, point minus point SHALL give a vector, point plus or minus vec
 - **THEN** the type checker infers a point in `Tool`
 
 ### Requirement: Affine mistakes are type errors
-Adding two points, scaling a point and negating a point SHALL be type errors.
+Adding two points, scaling a point and negating a point SHALL be type errors, and SHALL raise when executed.
 
 #### Scenario: Point plus point
 - **WHEN** the code computes `tip + tip` for a point `tip`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 #### Scenario: Scaling a point
 - **WHEN** the code computes `2 * tip` for a point `tip`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: Mixing frames is a type error
-Every binary operation between points and vectors SHALL require both operands in the same frame, and assigning a value in one frame to a variable annotated with another frame SHALL be a type error.
+Every binary operation between points and vectors SHALL require both operands in the same frame, and assigning a value in one frame to a variable annotated with another frame SHALL be a type error. Every such operation SHALL also raise at runtime when the frames stored in the operands differ, whatever their annotations.
 
 #### Scenario: Vectors in different frames
 - **WHEN** the code adds a vector in `Tool` to a vector in `Base`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 #### Scenario: Widening a bound value
 - **WHEN** `v` is bound to a vector in `Tool` and then assigned to a variable annotated as a vector in `Base`
 - **THEN** the type checker reports an error
+- **AND** executing the assignment does not raise (an annotation is not checked at runtime), and the first operation between it and a vector in `Base` raises an error naming both frames
+
+#### Scenario: A value in the wrong frame keeps its own frame
+- **WHEN** `v1: Vector[B2] = Vector(0, 0, 1, B1)`, `v2 = Vector(0, 0, 1, B2)`, and the code computes `v1 + v2`, `v2 + v1` and `v1 + v1`
+- **THEN** the type checker reports the assignment of `v1`
+- **AND** `v1 + v2` and `v2 + v1` raise an error naming `B1` and `B2`, and `v1 + v1` is the vector (0, 0, 2) in `B1`
 
 ### Requirement: Vector algebra
 A vector SHALL provide the dot product and the cross product with a vector in the same frame, its norm as a scalar, and normalization to a unit vector in the same frame.
@@ -107,3 +116,4 @@ A point or vector SHALL provide simplification returning the same type in the sa
 #### Scenario: Misspelled declaration
 - **WHEN** a frame is declared with a misspelled notation keyword
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake

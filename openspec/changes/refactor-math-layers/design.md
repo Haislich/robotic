@@ -15,12 +15,12 @@ See `proposal.md` - Why. Current state relevant to the approach:
 **Goals:**
 - Code reads like a handwritten exam solution: frames visible in every type (^A R_B, ^A T_B, ^F v), exact values by default, verbose where that makes the semantics clear.
 - Every rule the design relies on is verified by a tool (ty, ruff, a test), never protected by documentation alone.
-- Static checks first; runtime checks only where the static version was measured to cost too much.
+- Static checks first, and every static promise is also enforced at runtime, at the operation that breaks it (intent I0, I3; D35). Runtime checks alone only where types cannot express the rule.
 
 **Non-Goals:**
 - A numeric matrix algebra. Numbers exist only as the output of a compiled function.
 - Static tracking of which symbols an expression contains.
-- Catching wider types the user writes explicitly (`v: Vector[Frame] = ...`, user generic helpers); see Risks.
+- Catching statically the wider types the user writes explicitly (`v: Vector[Frame] = ...`, user generic helpers); the runtime check of D35 catches their first misuse. See Risks.
 - Euler angles and RPY (D24).
 - A general matrix type (D21).
 
@@ -76,13 +76,17 @@ Rejected: lifting the ban everywhere because it cannot reach tests and notebooks
 - Exact constants are methods: `Scalar.pi()`, `.sqrt()`, `.exp()`. A module-level `pi` is shadowed silently by `math.pi`.
 - Floats are accepted inside expressions as written. Shown before deciding: float `Rz(q) Rz(pi/2)[0,0]` simplifies to `-1.0*sin(q) + 6.12323399573677e-17*cos(q)` against the exact `-sin(q)`; `solve(cos q = 0.5)` gives `[1.04719755119660, 5.23598775598299]` against `[pi/3, 5*pi/3]`. The leak is intentional: writing `0.3` means not caring about exactness.
 
-Consequence kept (review round 2): a rotation built from floats does not reach the exact identity or half-turn branch of axis-angle. `Rz(math.pi)` has a skew part of norm 2.4e-16, so it takes the regular formulas, its second angle is −π, and its compiled flag is false. The tolerance flag (D28) reports exactly this near-singular case; the exact branches are for exact angles (`Scalar.pi()`).
+Consequence kept (review round 2): a rotation built from floats does not reach the exact identity or half-turn branch of axis-angle. `Rz(math.pi)` has a skew part of norm 2.4e-16, so it takes the regular formulas, and its second angle is −π; the exact branches are for exact angles (`Scalar.pi()`).
 
 Rejected: rejecting floats at every entry point; raw float typed as `Numeric` with a documented trap table (only docs protected it); explicit exact fractions required (`Symbolic(3) / 10`); converting floats with `nsimplify` in the printer.
 
 ### D5. sympy functions as methods
 
 `.simplify()`, `.latex()`, `.lambdify(...)`, trigonometric functions and `atan2` are methods on the value. Rejected: free functions (they need docs to be found; style rule: free functions only when really needed); a static-only utils class.
+
+What `simplify` promises (review round 4; intent I4, I5): an equal expression, in a simpler form when one is found; the form is not promised, so a better strategy later changes no contract. Which sympy strategy runs is Claude's choice, inside the boundary. sympy's own documentation says `simplify` "is not a well defined term and the exact strategies this function tries can change in the future versions of SymPy" and recommends the specific functions. Probed with sympy 1.14 on entry (2,2) of the user's `monster` (identity): `simplify` 0.22 s and `trigsimp` (default method) 0.53 s both leave a polynomial in sin q and cos q; `trigsimp(method="fu")` gives `1` in 0.05 s, `method="groebner"` in 0.38 s. On a norm (‖Rz(q) x‖) and on entry (1,1) of 3-, 4- and 6-joint alternating chains, `trigsimp` gave the same result as `simplify`, 1.5 to 4 times faster (6 joints: 0.21 s versus 0.30 s for one entry). The library's expressions are products and sums of sin and cos of symbols, with square roots from norms and `atan2` from axis-angle, so the strategy is chosen among the trigonometric ones and verified on the whole test suite (task 12.5); the earlier figure "6 joints simplify did not finish in 200 s" was measured through the library on whole rotations and is re-measured there.
+
+Rejected: `sympy.simplify` (heuristics that sympy itself says may change between versions, slower on every probe); `trigsimp` with its default method (misses the `monster`).
 
 ### D6. Frames are types, stored at runtime, invariant
 
@@ -136,6 +140,10 @@ Rejected (review round 1): broadcasting the entries so a direct array call works
 
 JAX is the only backend: `lambdify(..., modules="jax")` under `jax.jit`, with `jax_enable_x64`. Autodiff is part of the numeric path (whitelisted).
 
+Compilation does not simplify, and it eliminates common subexpressions (review round 4; the first is the user's decision, the second Claude's; intent I5, I6). `simplify` stays explicit, for reading a result: it gives no numeric gain and can block. Probed on the user's `monster` (eight rotations whose product is the identity): simplify 0.85 s, after which sympy still could not reduce two diagonal entries to 1; max error against I over q in [0.1, 10] 4.4e-16 with and without simplify; 11.9 µs versus 14.2 µs per call. Float64 error grows about linearly with the chain, ~1e-16 per rotation (R R⁻¹ chains of 4, 8, 16 rotations: 3.3e-16, 6.7e-16, 1.4e-15). Unsimplified products grow exponentially as expressions (entry (1,1) of a 24-rotation chain: 8609 characters, ×2.7 every 4 rotations), and XLA's compile time with them; `sympy.lambdify(..., cse=True)` computes each repeated piece once: 24 rotations 8.65 s → 0.18 s, 32 rotations > 90 s → 0.50 s, 48 rotations > 90 s → 17.5 s (the cse pass itself). sympy leaves `cse` off by default because the pass has its own cost, which small expressions do not repay; the library's quantities are products of rotations, where it pays.
+
+Rejected: an implicit `simplify` inside `lambdify` (no precision or speed gain measured; a 6-joint alternating chain did not simplify in 200 s, so compiling could never finish); compiling without `cse` (sympy's default; the exponential compile time above).
+
 Because validation reads the annotations at runtime, the annotation's name must exist at runtime. ruff's `typing-only-third-party-import` (TC002) treats a bare `ArrayLike` in a dataclass field as typing-only and asks to move its import under `TYPE_CHECKING`, which would make `get_type_hints` fail; the tests and docs write `jax.typing.ArrayLike` through the runtime-used `jax` binding instead. (ruff's `runtime-evaluated-decorators = ["dataclasses.dataclass"]` would state this in configuration; not added, the qualified spelling needs no exception.)
 
 Rejected: `float` fields only (batched code is a ty error); `ArrayLike` fields only (the exam code would write `q1: ArrayLike` for one configuration); caller-ordered symbols `lambdify((q1, q2))`; sorted-name order (`"q10" < "q2"`); creation-order counters; runtime-generated parameter classes (`type(...)`, `make_dataclass`, metaclass: ty sees `Unknown`/`Any`); a `backend` parameter, `Backend(StrEnum)` and per-backend overloads (until a second backend exists); `Piecewise` branching inside compiled code.
@@ -156,19 +164,23 @@ The printed form of a `Numeric` lists concrete components and shows a tracer as 
 
 `Numeric._unflatten` builds `Numeric[Symbolic](...)` through the subscripted alias (review round 3, Claude's decision). Probed in ty 0.0.91: a plain `Numeric(...)` infers `Numeric[Unknown]` and is an `unsound-return-statement` (and, bound to an annotated local, an `unsound-assignment`); annotating the return `Numeric[Any]` is banned by ruff's `any-type`. The alias dispatch costs microseconds and runs when JAX unflattens at a trace boundary, not on each compiled call.
 
-Derivatives are taken of `.components`, not of the `Numeric` (review round 3, Claude's decision; the user delegated JAX-side decisions): `jax.jacrev(lambda q: compiled(P(q)).components)`. `jax.jacrev` and `jax.jacfwd` of the whole result fail on its boolean `valid` child (D28). Rejected: dropping the flag child from results without a condition (the runtime branch D28 avoids, and axis-angle results would still fail); making `Numeric` differentiable as a whole (the derivative would come back labelled `Numeric[Rotation[A, B]]` while holding dR/dq, which is not a rotation: the type would claim a meaning the numbers lack, against this decision's principle).
+Derivatives are taken of `.components`, not of the `Numeric` (review round 3, Claude's decision; the user delegated JAX-side decisions): `jax.jacrev(lambda q: compiled(P(q)).components)`. Rejected: making `Numeric` differentiable as a whole (the derivative would come back labelled `Numeric[Rotation[A, B]]` while holding dR/dq, which is not a rotation: the type would claim a meaning the numbers lack, against this decision's principle).
 
 ### D13. Axis-angle is symbolic
 
-`R.to_axis_angle()` returns an `AxisAngleSolutions` with `.first` and `.second` (each an `AxisAngle`: `.axis` and `.angle`) and `.valid_when` (a `ValidityCondition`), without evaluating anything; an axis compiles like any vector. Content (course convention): angle in (−π, π]; regular (r, θ), (−r, −θ); half turn (r, π), (−r, π); identity (a, 0), (−a, 0) with `FreeAxis`, default z. Default `tolerance=1e-9`. The axis of ^A R_B satisfies R r = r, so it has the same components in A and B.
+`R.to_axis_angle()` returns an `AxisAngleSolutions` with `.first` and `.second` (each an `AxisAngle`: `.axis` and `.angle`), without evaluating anything; it compiles like any quantity, and so does an axis alone. Content (course convention): angle in (−π, π]; regular (r, θ), (−r, −θ); half turn (r, π), (−r, π); identity (a, 0), (−a, 0) with `FreeAxis`, default z. The axis of ^A R_B satisfies R r = r, so it has the same components in A and B.
 
-Probed (the singular case, see D28): for `Rz(q)` sympy gives axis `[0, 0, sin(q)/Abs(sin(q))]` and angle `atan2(Abs(sin(q)), cos(q))`; compiled at q = 0.5 it gives `[0 0 1]`, at q = 0 `[0 0 nan]`, at q = π `[0 0 1]` only by luck (float sin(π) = 1.2e-16). `Rx(π/2) Rz(q)` at q = π gives `[nan -inf inf]`.
+Which case applies (review round 4, user's rule; intent I4, I6): a rotation whose entries, once simplified, contain no symbol is decided exactly, as identity, half turn or regular; a rotation with at least one symbol always gets the regular formulas, whatever values the symbols will take. The symbolic side does not predict where those formulas break, because it does not have the values; what happens there is decided on the numeric side, open on purpose (intent.md; proposal, Out of Scope). User (2026-10-26): "Nel lato simbolico ho due possibili funzioni che variano a seconda del valore dei simboli, che non ho e quindi non riesco a determinare, quindi in quel momento per quanto ne so io l'indeterminazione è valida e rimangono entrambe le funzioni." The test runs on the simplified entries, so `R @ R.inverse()` (entries `sin(q)**2 + cos(q)**2` as built, `1` simplified) is recognized as the identity. The simplifier can fail to remove a symbol from a constant rotation (the user's `monster`, eight rotations whose product is the identity, keeps polynomials in sin q and cos q after `simplify`); then the regular formulas apply. For a constant regular rotation they give the right value; for a constant identity or half turn the skew part is zero, and normalizing it raises (D14, D20) or, where the simplifier cannot prove the zero, compiles to the open-on-purpose singular behavior. A stronger simplifier only turns such failures into exact answers, an addition to the contract (intent I4).
+
+Consequence: a rotation that truly depends on a symbol and has an identically zero skew part (a half turn about a symbolic axis (a, 1, 0)) raises when the regular formulas normalize that skew part, as normalizing any zero vector does (D14, D20).
+
+Probed (the singular case, open on purpose): for `Rz(q)` sympy gives axis `[0, 0, sin(q)/Abs(sin(q))]` and angle `atan2(Abs(sin(q)), cos(q))`; compiled at q = 0.5 it gives `[0 0 1]`, at q = 0 `[0 0 nan]`, at q = π `[0 0 1]` only by luck (float sin(π) = 1.2e-16). `Rx(π/2) Rz(q)` at q = π gives `[nan -inf inf]`.
 
 Rejected: evaluating first, then extracting (`R.evaluate({...}).to_axis_angle()`); raising for the identity; `NoRotation` / `HalfTurn` / `Undecided` union arms; an "all cases" object with mandatory `.evaluate()`; `FreeAxis` as a non-subtype.
 
 ### D14. Error principle
 
-Raise when no answer exists (normalizing a zero vector, a free symbol without a field at compile time). Return a typed result when a singular case still carries information (axis-angle of the identity).
+Raise when no answer exists (normalizing a zero vector, a free symbol without a field at compile time), and when an operation breaks a static promise (D35). Return a typed result when a singular case still carries information (axis-angle of the identity).
 
 ### D15. The exam notebook is the benchmark
 
@@ -230,11 +242,12 @@ Rule (user's, D16): no clash with the language; a keyword escape counts as a cla
 | `Numeric[T]` | the thin compiled result of a `T` (D12); pairs with `Symbolic` | `Evaluated` (names the process), `Numerical` (same meaning, longer), `Sample` (random or time-series sampling) |
 | `Compiled[P, T: Symbolic]` | the compiled function; `__call__(values: P) -> Numeric[T]` | `Compiled[P, R]` with the full result type (`R` was always `Numeric[...]`, and an unbounded `R` let `Compiled[Parameters, int]` pass; probed: the bound rejects it) |
 | `AxisAngle[F]` | one axis-angle representation: `.axis`, `.angle` | `AxisRotation` (the stub's name for it: reads as a rotation object, confusable with `Rotation.about_axis`); in the stub `AxisAngle` named the outer result, which is not an axis-angle |
-| `AxisAngleSolutions[F]` | the result of `to_axis_angle()`: `.first`, `.second`, `.valid_when`; the course's "two solutions"; a `Symbolic`, so it compiles as a whole (D28) | `AxisAnglePair` (says how many, not why; invites tuple unpacking) |
-| `ValidityCondition` | a symbolic statement over the variables, true where a result is valid ("valid when sin q ≠ 0"); renders LaTeX; a `Symbolic` that compiles to a flag (D28) | `Condition` (`threading`, `asyncio`, `multiprocessing`), `Predicate` (`sympy.Predicate`), `Constraint` (something imposed, as in optimization), `Guard` (programming jargon) |
+| `AxisAngleSolutions[F]` | the result of `to_axis_angle()`: `.first`, `.second`; the course's "two solutions"; a `Symbolic`, so it compiles as a whole | `AxisAnglePair` (says how many, not why; invites tuple unpacking) |
 | `Transform.with_rotation`, `Transform.with_translation` | the builder steps of D17; each pairs with its property (`T.with_rotation(R).rotation` is `R`) and returns the same type, as `Path.with_suffix` does | `Rotation.with_origin(origin: Point[To])` (the earlier name: reads as giving a rotation an origin; replaced with D17), `placed_at` (vague about which part is set) |
 | `target`, `source` | the frames of a rotation or transform, in the mapping reading (D16) | `relative_to` / `of`, `To` / `From` (D16) |
 | `Frame.notation` | how the course writes the frame, e.g. `0` or `3'` (D19) | see D19 |
+
+`ValidityCondition` (a symbolic statement true where a result is valid, compiled to a flag) was removed in review round 4 with the flag (D28).
 
 `Symbolic` here is not the rejected two-worlds scalar of D1: there is one symbolic base and one compiled result type, no `S` parameter and no gated methods.
 
@@ -252,7 +265,7 @@ Rejected: the keyword `latex` (the earlier name: a string on frames, while `late
 
 Probed with sympy 1.14, norm simplified first: (cos q, sin q, 0) stays (cos(q), sin(q), 0); (1, 1, 0) gives (sqrt(2)/2, sqrt(2)/2, 0); (3, 4, 0) gives (3/5, 4/5, 0); (q, 0, 0) gives (q/Abs(q), 0, 0). Without simplifying the norm the first prints `cos(q)/sqrt(sin(q)**2 + cos(q)**2)`.
 
-A norm that vanishes only at some configurations (q/Abs(q) at q = 0) does not raise symbolically and compiles to `nan` there; that is hole 2 (Q2), not a unit-vector question.
+A norm that vanishes only at some configurations (q/Abs(q) at q = 0) does not raise symbolically; its compiled value there is unspecified, open on purpose (intent.md; proposal, Out of Scope). Probed: it compiles to `nan` today, which is not a promise.
 
 Rejected: a constructor taking components with a unit-length check (proving x² + y² + z² = 1 symbolically can fail and would raise for a vector that is unit, against D14); a constructor taking components without a check (the type would promise what nothing guarantees).
 
@@ -298,19 +311,19 @@ Rejected: `R[0, 2]` for r₁₃ (an off-by-one on every transcription from a sol
 
 ### D27. No frame accessor on compiled results in this change
 
-`Numeric[T]` exposes `.components`, and one self-gated accessor (D28): `valid[F](self: Numeric[AxisAngleSolutions[F]]) -> jax.Array`. The meaning is the type `T`; the runtime frame, kept in the pytree aux data (D12), appears in the printed form (`Numeric[Point[Base]]([1.0, 0.5, 0.0])`). Nothing in this change reads a compiled frame: simulation reads `.components`, the benchmark compares numbers.
+`Numeric[T]` exposes `.components` only. The meaning is the type `T`; the runtime frame, kept in the pytree aux data (D12), appears in the printed form (`Numeric[Point[Base]]([1.0, 0.5, 0.0])`). Nothing in this change reads a compiled frame: simulation reads `.components`, the benchmark compares numbers.
 
 Additive path for a later change (probed in ty 0.0.91, one class, no new types): self-annotated methods offered only for the matching `T`, `frame[F](self: Numeric[Point[F]]) -> type[F]` and `target[A, B](self: Numeric[Rotation[A, B]]) -> type[A]`; `scalar.frame()` and `rotation.frame()` are errors.
 
-Rejected: a plain `.frame` property (no single return type fits a point, a rotation and a scalar); per-concept result classes (reopens D18's single `Numeric[T]`); adding the frame accessors now (no reader in this change). The validity flag does have a reader (D28), so it takes the gated path; folding it into the components as a fifth float column was rejected (a boolean posing as a float, read by index).
+Rejected: a plain `.frame` property (no single return type fits a point, a rotation and a scalar); per-concept result classes (reopens D18's single `Numeric[T]`); adding the frame accessors now (no reader in this change). The validity flag of earlier rounds took this gated path (`valid[F](self: Numeric[AxisAngleSolutions[F]])`) until review round 4 removed it (D28).
 
-### D28. Singular configurations surface as a compiled flag
+### D28. No validity condition: the symbolic side does not predict singularities
 
-`ValidityCondition` is a `Symbolic` and compiles to a boolean of shape `()`, applying the tolerance of `to_axis_angle` (`|expression| > tolerance`, default `1e-9`) instead of `≠ 0`. `AxisAngleSolutions` is a `Symbolic` too; compiling it as a whole returns both solutions and the flag in one result, so on the main path the flag cannot be left out: `.components` has shape `(2, 4)`, rows the first and second solution, columns r_x, r_y, r_z, θ; `.valid()` is the boolean flag of shape `()` (D27), a second pytree child. Every compiled result carries a flag child (true for quantities without a condition), so the accessor needs no runtime branch; only `Numeric[AxisAngleSolutions[F]]` exposes it. When the flag is false the caller decides; nothing is substituted.
+Serves intent I4 and I6; review round 4, user's decision. `to_axis_angle` returns the two solutions only; there is no `ValidityCondition`, no `.valid_when`, no compiled flag and no `tolerance` argument. Where a symbolic result breaks is a question about values, which the symbolic side does not have (D13); the behavior at singular configurations in compiled code is open on purpose (intent.md; proposal, Out of Scope), so any later answer (raise, flag, debug mode) is an addition. User: "Cercare di prevedere tutto quello che causa problemi ci porta a una spirale in cui perdiamo il controllo"; "sembra comunque un problema che deve risolvere il lato numerico".
 
-Probed, `Rz(q)` regular-case formulas compiled with JAX under `jit` (axis z component, angle, exact flag `sin θ ≠ 0`, tolerance flag `|sin θ| > 1e-9`):
+Evidence kept for the open item, `Rz(q)` regular formulas compiled with JAX under `jit`:
 
-| q | axis z | angle | exact | tolerance |
+| q | axis z | angle | exact flag `sin θ ≠ 0` | tolerance flag `\|sin θ\| > 1e-9` |
 |---|---|---|---|---|
 | 0.0 | nan | 0.000e+00 | False | False |
 | 1e-12 | 1.0 | 1.000e-12 | True | False |
@@ -318,9 +331,9 @@ Probed, `Rz(q)` regular-case formulas compiled with JAX under `jit` (axis z comp
 | 0.5 | 1.0 | 5.000e-01 | True | True |
 | π | 1.0 | 3.142e+00 | True | False |
 
-The exact flag misses the near-identity case (meaningless axis) and the half turn (right only because float sin(π) = 1.2e-16); the tolerance flag catches both.
+Without a flag, q = 1e-12 and q = π give plausible numbers with no warning (at π the axis is right only because float sin(π) = 1.2e-16). This is what the open item must weigh.
 
-Rejected: an exact `≠ 0` flag (the two misses above); `Piecewise` branching in compiled code; forbidding an axis from compiling alone (reverses D13; see Risks).
+Rejected (review round 4): the compiled flag of rounds 1-3 (a `ValidityCondition` compiled with a tolerance, read through a gated `valid()`, carried as a second pytree child by every result): which case and which condition a rotation got depended on what the simplifier could prove, so a sympy upgrade could change the contract (intent I4), and it predicted on the symbolic side what only values decide. Rejected earlier: an exact `≠ 0` flag (the misses in the table); `Piecewise` branching in compiled code; forbidding an axis from compiling alone (reverses D13).
 
 ### D29. One boundary module
 
@@ -345,7 +358,7 @@ Rejected: building points through hidden attribute assignment after `object.__ne
 - `Symbol.simplify()` returns the symbol itself, typed `Self`: a symbol is already simplest, and `Scalar.simplify -> Scalar` would otherwise give `Symbol` a `Scalar` result against `Symbolic.simplify -> Self` (review round 3).
 - Compile-time failures are domain exceptions: `ParameterTypeError(TypeError)` for a field not annotated `float`, `MissingParameterError(ValueError)` for a free symbol without a field, each naming the class and the fields or symbols. `ParameterShapeError(ValueError)` is raised at trace time for a field holding an array outside `vmap` (D11).
 
-Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above); a runtime check that raises for values outside `ScalarLike`, such as `np.float32` (review round 2: ty already rejects them). Revised in review round 3: every operator returns `NotImplemented` for an operand outside `ScalarLike`, as Python's operator protocol requires; this is not a duplicate of the type check, it is what lets `l1 * x_axis` reach `Vector.__rmul__` (before, `Scalar.__mul__` wrapped `None` and crashed).
+Rejected: a public `Scalar(expression: sympy.Expr)` constructor (a sympy type in a public signature); `Symbol` without its own constructor (the `Symbol(3)` hole above); a runtime check that raises for values outside `ScalarLike`, such as `np.float32` (review round 2: ty already rejects them; reversed in review round 4 by D35, since intent I3 asks every static promise to hold at runtime too). Revised in review round 3: every operator returns `NotImplemented` for an operand outside `ScalarLike`, as Python's operator protocol requires; this is not a duplicate of the type check, it is what lets `l1 * x_axis` reach `Vector.__rmul__` (before, `Scalar.__mul__` wrapped `None` and crashed).
 
 ### D32. Verification mechanisms
 
@@ -362,15 +375,14 @@ Rejected: executing extracted code blocks with `exec` (ruff S102, and outputs un
 - `Point` is `@final`. Points and vectors share a private storage base, so ty considered a class that is both; `final` rules it out and narrows `Point | Vector` in `match`.
 - `AxisAngle[F]` is a frozen dataclass with `axis` and `angle`; it is not `Symbolic` (the stub's choice): its axis and angle compile on their own (D13).
 - The skew-part axis of the regular case is `skew.normalize()`, so the normalization of D20 gives `sin(q)/Abs(sin(q))` for `Rz(q)` directly; the second solution is `(-first.axis, -first.angle)`, as the course writes it, with `UnitVector.__neg__` returning a `UnitVector` (negation keeps unit length, so nothing is normalized twice).
-- The half-turn axis is the normalized column k of R + I whose diagonal entry does not simplify to zero. Column k is 2 r r_k and r_kk + 1 = 2 r_k², so the column vanishes exactly where r_kk + 1 = 0: the half turn's `ValidityCondition` is `r_kk + 1 != 0` for the chosen k. Only the identity is valid everywhere (`1 != 0`). A skew part that simplifies to zero with a trace proving neither case raises (D14: no answer can be given).
-- `AxisAngleSolutions` compiles its condition through the condition's own layout; the layout of a `ValidityCondition` is defined once. `Layout.condition` holds the condition itself, and `Compiled` (inside the boundary) reads its layout: calling `self._valid_when._layout()` from `AxisAngleSolutions` is private access across classes, which ruff's `private-member-access` flags outside `symbolic.py`.
+- The half-turn axis is the normalized column k of R + I whose diagonal entry does not simplify to zero. Column k is 2 r r_k and r_kk + 1 = 2 r_k², so the column vanishes exactly where r_kk + 1 = 0. The half turn and the identity are reached only by rotations without symbols (D13), where every entry is a number and the choice is exact.
 - `Rotation` and `Transform` are `@final`, like `Point`. ty 0.0.91 does not accept the private factory's `Rotation[A, B]` as `Self`, even on a final class; so `simplify`, `with_rotation` and `with_translation` are annotated with the concrete type (`Rotation[Target, Source]`, `Transform[Target, Source]`), which final makes equal to `Self`. Probed: the `Self` return with the factory is an `invalid-return-type` error; the concrete return on the final class is clean.
 - Method-level frame parameters are `A`, `B` (`about_z[A: Frame, B: Frame]`), the letters of ^A R_B; the class parameters stay `Target`, `Source`. Calls write `target=` before `source=`, the order of the type parameters.
 - Open point, kept for a later revisit (user's decision, review round 2): the regular case simplifies the norm ‖s‖ of the skew part twice, once for sin θ = ½‖s‖ and once inside `normalize`, which divides s by its own simplified norm. Normalization happens once; the norm is computed twice because D20 lets no unit vector be built from a supplied length. The cost is one extra `sympy.simplify` of a square root per extraction. Ways to revisit, not chosen: a `UnitVector` built from a known length (reopens the hole D20 closes); `UnitVector` exposing its length (a public accessor on a type whose length is one); memoizing simplification in the boundary (hidden mutable state).
 
 The column search of the half turn always finds a column: r_kk + 1 = 2 r_k², and a unit axis has some r_k ≠ 0, while the search skips only entries proved zero. Rejected (review round 2): a default for the search or a separate error (it cannot be reached by a `Rotation`, whose public constructors guarantee a rotation).
 
-Rejected (review round 1): the half turn as valid everywhere (`1 != 0`, the earlier text): with the axis (a, 1, 0) normalized and the angle π, column 1 is chosen because r₁₁ + 1 = 2a²/(a² + 1) is not identically zero, and compiled at a = 0 the axis is NaN while `valid()` is true.
+Rejected (review round 1): the half turn as valid everywhere (`1 != 0`, the earlier text): with the axis (a, 1, 0) normalized and the angle π, column 1 is chosen because r₁₁ + 1 = 2a²/(a² + 1) is not identically zero, and compiled at a = 0 the axis is NaN while `valid()` is true. Superseded in review round 4: a rotation with a symbol gets the regular formulas (D13), and the condition is gone (D28).
 
 Rejected: a public constructor from entries (a matrix that is not a rotation would type as one); a public `_Matrix3`-taking constructor (the same hole behind a private type); rotations storing their frames only as phantom types (D6).
 
@@ -384,13 +396,39 @@ Public constructors that exist only because Python has no private ones (`Point(.
 
 Rejected: a factory for everything (a transform's parts are already its arguments; `with_origin` duplicated the constructor); a builder pattern for every type (only `Transform` is assembled from framed parts, D17); leaving both spellings in use (a learner sees the same math written two ways and must check that they are equivalent).
 
+### D35. Every static promise also holds at runtime
+
+Serves intent I0 and I3. Review round 4, against `openspec/intent.md`: at the end of review round 3 no operation checked anything at runtime. Probed: `A.vector(1,0,0) + B.vector(1,0,0)` gave `Vector[A](2, 0, 0)`; `A.vector(1,0,0) * A.vector(1,0,0)` gave `Vector[A](None, None, None)`; `Scalar("x")` gave `None`; `r_ab @ r_ab` gave `Rotation[A, B]`. The user's case (`stratchpad/t.py`): with `v1: Vector[B2] = Vector(0, 0, 1, B1)`, ty reports the assignment, and at runtime `v1 + v2` and `v2 + v1` returned vectors instead of raising.
+
+Every mistake the type checker rejects raises when executed, at the operation that commits it, with a message naming what is wrong:
+- Operands in different frames (points, vectors, rotations, transforms, builder steps): `FrameMismatchError(TypeError)`, naming the operation and both frames, e.g. "cannot add Vector[A] and Vector[B]: frames A and B differ". It subclasses `TypeError` because it is the runtime image of a type error. The check reads the frames stored in the values (D6), so it holds whatever the annotations say.
+- Operands outside an operation's accepted types (`q + "a"`, `vector * vector`, `2 * point`, `rotation @ point`, `Scalar("x")`, `compiled(0.5)`): `TypeError`, through Python's operator protocol (`NotImplemented`) for operators and an explicit check for constructors and calls.
+- An entry index outside its range: `IndexError` naming the range ("rotation entries are counted from 1 to 3"; D26 still makes it a type error first).
+
+Limit, declared: an annotation is not executed, so `v: Vector[Base] = approach` with `approach` in `Tool` raises nothing at the assignment; the mistake surfaces at the first operation with a `Base` value, where the stored frame differs. Nothing in Python can intercept the assignment itself. User (2026-10-26): "Questo è uno di quei casi in cui Python ci ricorda che i tipi sono solo dei suggerimenti e sta a noi renderli validi. In questo caso abbiamo fatto il massimo e il runtime è l'unica linea di difesa che ci potrebbe salvare."
+
+Cost (intent I6): the checks run on the symbolic side, when an expression is built, never inside a compiled function; `Compiled.__call__` checks its argument's type once per call in plain Python and once per trace under the caller's `jit`.
+
+Verification: a test executes every `# mistake:` line of the negative fixture (D32) after its setup lines and asserts it raises; lines that are annotations only are marked `# static only:` and must stay silent at runtime. The test fails first, then passes.
+
+Rejected: runtime checks only where the static check was measured to cost too much (the earlier Goals line; it lets an ignored type error produce a wrong result much later, against intent I3); `assert` statements (removed under `python -O`, and the project bans them, `narrow-types-protocols-no-asserts`); a debug flag enabling the checks (a mistake must fail the same way whether or not a flag is set).
+
+### D36. Symbolic and compiled values have no equality
+
+Serves intent I0 and I4; review round 4, user's decision. At the end of review round 3 no class defined `__eq__`, so every value inherited Python's identity comparison: `A.point(1, 0, 0) == A.point(1, 0, 0)`, `Rotation.about_z(q, ...) == Rotation.about_z(q, ...)` and `Scalar.symbol("q") == Scalar.symbol("q")` were all `False`, and `AxisAngle`, a dataclass, compared its fields the same way. Nobody decided it; Python provides it, so a wrong answer could pass unnoticed. User: "il fatto che python lo implementa significa che posso avere delle risposte sbagliate senza accorgermene."
+
+`==`, `!=`, `hash` and `bool` raise `TypeError` on every `Symbolic` and on `Numeric`. The message says what to do instead: for symbolic values, compile them and compare the numbers at a configuration; for compiled values, compare `.components` with a tolerance (`jnp.allclose`). The symbolic side cannot know whether two values are equal on the whole domain; a configuration can. User: "ti posso dire solo se puntualmente è vero, non posso dirti se è vero per ogni elemento del dominio, che è una cosa onesta, ma troppo onerosa per ==." Frames are classes and keep Python's class comparison, which is the right one for a type.
+
+No equality is implemented: none has a use yet, and one implemented badly would give answers that look right. When a use appears, adding a comparison is an addition to the contract (intent I4).
+
+Rejected: keeping Python's identity comparison (a silent wrong answer, against intent I0); equality of the written form (`False` may mean "written differently", not "different"); mathematical equality through simplification (sympy can fail to prove a true identity, as on the user's `monster`, and can hang; no `hash` consistent with it); an exact canonical form for polynomials in sine and cosine (probed: exact and fast on the robotics cases, including the `monster` and a 6R chain, but outside its class, e.g. q and q/2, it needs further rules; cost without a use); probabilistic equality at random points (not a proof).
+
 ## Risks / Trade-offs
 
-- [Explicit widening is not caught: `w: Vector[Frame] = Tool.vector(1, 0, 0)` inline, and user generic helpers `[G: Frame]` called with inline mixed arguments, pass ty] → Only the user can write these; the negative fixture records them as known misses so a ty upgrade that starts catching them is visible.
+- [Explicit widening is not caught statically: `w: Vector[Frame] = Tool.vector(1, 0, 0)` inline, and user generic helpers `[G: Frame]` called with inline mixed arguments, pass ty] → The stored frame makes the first operation mixing frames raise (D35, intent I3: runtime is the only line where types cannot reach); the negative fixture records them as known misses so a ty upgrade that starts catching them is visible.
 - [ty 0.0.91 is pre-1.0; variance inference and union construction may change] → Exact pin; the negative type test (D10) gates every upgrade.
 - [Runtime validation in `lambdify` (D11) happens later than a type error] → It runs once per compilation, at definition time in a notebook, not inside simulation loops.
-- [NaN or ±inf at singular configurations after compiling] → `AxisAngleSolutions` compiles with its validity flag (D28).
-- [An axis compiled alone (D13) gives `nan` at q = 0 and an unmarked, meaningless axis near the identity; only the documentation points to the flagged path] → Accepted by the user: forbidding axes from compiling alone would reverse D13. The docs of task 6.5 show the flagged path first.
+- [Singular configurations after compiling: an axis compiled alone (D13), a normalized vector whose norm vanishes at some configuration (D20)] → Not an accepted risk: open on purpose (intent.md, "Open on purpose"; proposal, Out of Scope). The contract promises no value there; today they compile to `nan` or ±inf, and no doc or test states it. The validity flag that marked some of these cases was removed (D28), whose probe table is the evidence for the open item. Review round 4 re-labelled the earlier "accepted" entry, which contradicted intent I0.
 - [Rodrigues' (1 − cos θ) loses precision near θ = 0] → Oracle tests sample near singularities.
 - [Float leaks make simplified expressions noisy (`6.12323399573677e-17*cos(q)`)] → Accepted (D4); exact constants are one method call away.
 

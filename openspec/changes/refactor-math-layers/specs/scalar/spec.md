@@ -16,6 +16,7 @@ A scalar SHALL support addition, subtraction, multiplication, division, power an
 #### Scenario: Non-numbers are rejected
 - **WHEN** the code computes `q + "a"`
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: Symbols are created only by the library
 The library SHALL provide the only way to create a symbol, from a name, with fixed assumptions, so that two symbols with the same name are the same symbol.
@@ -59,6 +60,17 @@ A scalar SHALL provide simplification returning a scalar and a LaTeX rendering r
 #### Scenario: LaTeX output
 - **WHEN** the code renders `cos(q)` as LaTeX
 - **THEN** it obtains the string `\cos{\left(q \right)}`
+
+### Requirement: Symbolic values have no equality
+Comparing symbolic values with `==` or `!=`, hashing them and using them as a truth value SHALL raise an error saying to compile and compare the numbers at a configuration; this holds for scalars, points, vectors, rotations, transforms and axis-angle results.
+
+#### Scenario: Equal-looking rotations
+- **WHEN** the code compares two rotations about z by the same symbol `q`, built separately, with `==`
+- **THEN** it raises an error naming the comparison and pointing to compiled values
+
+#### Scenario: Scalar as a truth value or a key
+- **WHEN** the code writes `if q:` or uses `q` as a dictionary key
+- **THEN** it raises an error
 
 ### Requirement: No untyped algebra in public signatures
 No public function, method or attribute of the library SHALL accept or return a sympy type, and code outside the library's boundary modules SHALL be rejected by the linter when it imports sympy.

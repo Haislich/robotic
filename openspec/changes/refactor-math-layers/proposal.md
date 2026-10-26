@@ -47,4 +47,5 @@ None. `openspec/specs/` is empty.
 - Numeric backends other than JAX.
 - Static tracking of which symbols an expression contains.
 - Simplifying the skew norm of axis-angle once instead of twice (design D33, open point).
+- Singular configurations in compiled code (an axis compiled alone, a normalized vector whose norm vanishes at some configuration): whether they raise, carry a validity flag, or are caught by a debug mode. Open on purpose (`openspec/intent.md`); this change promises no value there, not even `nan`. The flagged path of axis-angle (design D28) is unaffected.
 - The ast-grep style-rule change (separate, small, planned), including a ban on identifiers ending in a single `_` (keyword escapes such as `from_`).

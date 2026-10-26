@@ -5,11 +5,7 @@ description = "Hand-implemented robot kinematics for studying and verifying robo
 readme = "README.md"
 authors = [{ name = "haislich", email = "josedlv936@gmail.com" }]
 requires-python = ">=3.14"
-dependencies = [
-    "jax>=0.12.0.1",
-    "numpy>=2.5.4",
-    "sympy>=1.14.0",
-]
+dependencies = ["jax>=0.12.0.1", "numpy>=2.5.4", "sympy>=1.14.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -25,17 +21,13 @@ dev = [
     "ruff==0.17.2",
     "ty==0.0.91",
 ]
-notebooks = [
-    "ipykernel>=7.4.0",
-    "ipympl>=0.10.0",
-    "polars>=2.0.0",
-]
+notebooks = ["ipykernel>=7.4.0", "ipympl>=0.10.0", "polars>=2.0.0"]
 
 [tool.uv]
 default-groups = "all"
 
-[tool.ruff]
-extend-exclude = ["*.ipynb"]
+# [tool.ruff]
+# extend-exclude = ["*.ipynb", "stratchpad"]
 
 [tool.ruff.lint]
 preview = true
@@ -43,9 +35,20 @@ select = ["ALL"]
 ignore = ["missing-trailing-comma", "missing-copyright-notice"]
 
 [tool.ruff.lint.per-file-ignores]
-".claude/hooks/*.py" = ["implicit-namespace-package", "suspicious-subprocess-import", "subprocess-without-shell-equals-true"]
-"src/robotic/symbolic.py" = ["too-many-public-methods", "private-member-access", "banned-api"]
-"tests/test_negative_typing.py" = ["suspicious-subprocess-import", "subprocess-without-shell-equals-true"]
+".claude/hooks/*.py" = [
+    "implicit-namespace-package",
+    "suspicious-subprocess-import",
+    "subprocess-without-shell-equals-true",
+]
+"src/robotic/symbolic.py" = [
+    "too-many-public-methods",
+    "private-member-access",
+    "banned-api",
+]
+"tests/test_negative_typing.py" = [
+    "suspicious-subprocess-import",
+    "subprocess-without-shell-equals-true",
+]
 "tests/**" = ["D1", "assert", "banned-api"]
 
 [tool.ruff.lint.pydocstyle]
@@ -59,6 +62,9 @@ ignore-names = ["J", "R", "T"]
 "spatialmath".msg = "Oracle library: import it only from tests/."
 "sympy".msg = "Untyped algebra: import it only from src/robotic/symbolic.py, the typed boundary."
 
+# [tool.ty.src]
+# exclude = ["stratchpad"]
+
 [tool.ty.rules]
 all = "error"
 
@@ -66,3 +72,6 @@ all = "error"
 respect-type-ignore-comments = false
 strict-equality-semantics = true
 strict-generic-narrowing = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

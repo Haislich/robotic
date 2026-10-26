@@ -16,6 +16,7 @@ Every quantity (scalar, point, vector, rotation, transform) SHALL compile, given
 #### Scenario: Wrong argument type
 - **WHEN** a compiled function is called with a bare float instead of a dataclass instance
 - **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 ### Requirement: Compilation validates once, at compile time
 Compiling SHALL raise when a free symbol of the quantity has no field of the same name, or when a field is annotated neither `float` nor `jax.typing.ArrayLike` (string annotations resolved), and SHALL perform no such check on each call.
@@ -37,7 +38,7 @@ Compiling SHALL raise when a free symbol of the quantity has no field of the sam
 - **THEN** compiling succeeds and the type checker reports no error
 
 ### Requirement: Results have the natural shape
-Calling a compiled function SHALL return JAX arrays in double precision with shape `()` for a scalar, `(3,)` for a point or vector, `(3, 3)` for a rotation, `(4, 4)` for a transform and `(2, 4)` for axis-angle solutions (rows the two solutions, columns the axis components and the angle); a validity condition compiles to a boolean of shape `()`.
+Calling a compiled function SHALL return JAX arrays in double precision with shape `()` for a scalar, `(3,)` for a point or vector, `(3, 3)` for a rotation, `(4, 4)` for a transform and `(2, 4)` for axis-angle solutions (rows the two solutions, columns the axis components and the angle).
 
 #### Scenario: Vector shape
 - **WHEN** a compiled vector is called
@@ -72,24 +73,19 @@ Every field value SHALL be a scalar of shape `()`; a field holding an array SHAL
 - **WHEN** `grad` is taken of the x component of the compiled vector (sin(q), 0, 0) with respect to `q` at `q = 0.5`
 - **THEN** the result is cos(0.5) = 0.8775825618903728
 
-### Requirement: Axis-angle solutions compile with their validity flag
-Compiling axis-angle solutions SHALL return both solutions together with a boolean flag that is true only where the validity condition holds by more than the tolerance (default 1e-9), read through an accessor that the type checker allows only on compiled axis-angle solutions; a validity condition SHALL compile on its own to such a flag.
+### Requirement: Axis-angle solutions compile
+Compiling axis-angle solutions SHALL return both solutions in one result; this change promises no value at singular configurations (open on purpose, see the proposal's Out of Scope).
 
 #### Scenario: Regular configuration
 - **WHEN** the axis-angle solutions of the rotation about z by `q` are compiled and called at `q = 0.5`
-- **THEN** the flag is true and the first axis is (0, 0, 1)
+- **THEN** the first axis is (0, 0, 1) with angle 0.5 and the second is (0, 0, −1) with angle −0.5
 
-#### Scenario: Identity
-- **WHEN** they are called at `q = 0`
-- **THEN** the flag is false
+### Requirement: Compiled results have no equality
+Comparing compiled results with `==` or `!=`, hashing them and using them as a truth value SHALL raise an error pointing to a tolerance comparison of `.components`.
 
-#### Scenario: Half turn
-- **WHEN** they are called at `q = π`
-- **THEN** the flag is false
-
-#### Scenario: Flag only on axis-angle solutions
-- **WHEN** the code reads the flag of a compiled point
-- **THEN** the type checker reports an error
+#### Scenario: Comparing two compiled results
+- **WHEN** the code compares two compiled points with `==`
+- **THEN** it raises an error pointing to `.components` and a tolerance comparison
 
 ### Requirement: Compiled values match the symbolic ones
 For any parameter values, the compiled result SHALL equal the symbolic quantity with those values substituted, within floating-point tolerance.

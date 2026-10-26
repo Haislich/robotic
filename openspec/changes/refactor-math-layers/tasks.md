@@ -85,6 +85,15 @@ Completed tasks 3.3, 4.1 and 5.1 are superseded where they name `latex=`, `of=` 
 - [x] 11.5 Document that derivatives are taken of `.components` in `docs/compilation.md`, with a `jax.jacrev` doctest of a compiled rotation (design D12); verify `tests/test_docs.py` passes
 - [x] 11.6 Verify the whole change as in 8.2
 
+## 12. Review round 4: against `openspec/intent.md`
+
+- [ ] 12.1 Every static promise also holds at runtime (design D35): `FrameMismatchError(TypeError)` for operands in different frames, `TypeError` for operands and arguments outside the accepted types, `IndexError` for an entry out of range, `TypeError` for `.valid()` without a flag; mark annotation-only fixture lines `# static only:`; verify a test executing every `# mistake:` line of `tests/type_mistakes.py.txt` fails first, then passes, and a test of the `v1: Vector[B2] = Vector(0, 0, 1, B1)` case (`v1 + v2`, `v2 + v1` raise naming B1 and B2; `v1 + v1` is (0, 0, 2) in B1)
+- [ ] 12.2 Singular configurations in compiled code promise nothing (design D20, Risks; proposal, Out of Scope): remove the doctest line printing `[0.0, 0.0, nan]` from `docs/compilation.md` and state that the behavior at singular configurations is not decided yet; verify `rg -n "nan" docs README.md` finds no promised value and `tests/test_docs.py` passes
+- [ ] 12.3 No validity condition (design D13, D28): a rotation whose simplified entries have no symbol is resolved exactly, one with a symbol always gets the regular formulas; remove `ValidityCondition`, `.valid_when`, `tolerance`, `Numeric.valid()` and the flag pytree child; remove the `.valid()` lines from the negative fixture and the flag from `docs/rotation.md`, `docs/compilation.md` and the exam notebook if present; verify the rotation and compilation spec scenarios (the symbolic half turn raising first fails, then passes), `rg -n "valid_when|ValidityCondition|valid\(\)" src tests docs exams` finds nothing, and the whole check as in 8.2
+- [ ] 12.4 Compile with common subexpression elimination and without implicit simplification (design D11); verify a 32-rotation R R⁻¹ chain compiles and runs its first call in under 5 s, the compiled results of the existing tests are unchanged within 1e-12, and the 6R forward kinematics compile time does not grow
+- [ ] 12.5 Choose the simplification strategy (design D5): replace `sympy.simplify` with the trigonometric strategy that passes the whole test suite (probe `trigsimp(method="fu")` first), and use it in `is_zero` too; verify the full check as in 8.2, the `monster` identity simplifying to the identity, and re-measure simplify time on 4- and 6-joint alternating chains through the library, recorded in D5
+- [ ] 12.6 No equality on symbolic and compiled values (design D36): `__eq__`, `__ne__`, `__hash__` and `__bool__` raise `TypeError` on `Symbolic` and `Numeric`, `AxisAngle` included; verify the spec scenarios fail first, then pass, `rg` shows no test, doc or notebook relying on `==` between these values, and the full check as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.

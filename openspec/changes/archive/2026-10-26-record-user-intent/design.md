@@ -110,7 +110,14 @@ Rejected: keeping "Do not decide on the user's behalf" with a list of delegated 
 - `refactor-design-state`: updated with the review's outcome and the next step.
 - `MEMORY.md`: index updated.
 
-Rejected: deleting the superseded memories (their episodes are the evidence behind the rules).
+Added during apply, at the user's request ("la memory deve essere sempre aggiornata perché faccio avanti e indietro con più pc"):
+- Claude Code's local memory folder is a symlink to `memory/`, so memories are written into the repository; the README setup links instead of copying.
+- New memory `memory-always-current`: memory and handoff are updated as things change.
+- `memory/handoffs/` holds the latest handoff only: `handoff-robotic-intent.md` replaces `handoff-robotic-rounds.md` (kept in git history).
+
+Rejected: deleting the superseded memories (their episodes are the evidence behind the rules); copying memories by hand between machines (they drift, which is the loss this change fixes).
+
+Reconciliation at archive: no violation of `openspec/intent.md` recorded.
 
 ## Risks / Trade-offs
 

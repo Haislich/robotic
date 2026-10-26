@@ -12,10 +12,12 @@ metadata:
 
 **Review of 2026-10-26** (external, against the user's goals): the code follows its artifacts faithfully yet diverges from what the user meant, because intentions were recorded only as decisions and lost between sessions. Change `record-user-intent` installed `openspec/intent.md` (I0-I7) and the CLAUDE.md Roles. Next: revise `refactor-math-layers` against intent.md, each item framed functionally: runtime enforcement of every static promise (I0, I3); a `to_axis_angle` contract independent of the simplifier; `==`/`hash`/`bool` fail loudly until decided; `is_zero` public or not; the name `lambdify`; meaning of floats; `Transform.of_rotation` (I7, candidate); replace the Goals line "runtime checks only where measured"; re-label the two accepted risks (axis compiled alone, vanishing-norm normalize) as violations or open items.
 
+**Review round 4** (2026-10-26, section 12 of tasks.md), revisions one at a time: 1. D35 runtime enforcement (task 12.1); 2. singular configurations open on purpose, in proposal Out of Scope (task 12.2); 3. no validity condition: no symbols → exact case, symbols → regular formulas (D13, D28, task 12.3); 4. lambdify: no implicit simplify, cse on (D11, 12.4); 5. simplify strategy: trigonometric, probe trigsimp fu (D5, 12.5); 6. no equality on symbolic or compiled values: ==, hash, bool raise (D36, 12.6). Contract changes are licit until this change is archived (user, 2026-10-26). Written, not applied.
+
 The user keeps the change open on purpose and iterates: review → classify (code bug = task only; spec/design bug = `/opsx:update`) → append a "Review round N" task section → `/opsx:apply`. They fear archiving early produces an endless chain of small changes. Exit criterion was proposed ("a review round with no test-exposable bug") but never confirmed — ask before archiving.
 
 Not done yet:
-- The user's untracked `scratchpad/t.py` (a Transform sketch) fails `uv run ruff check` and must be left alone; it is the only failure of the full check run.
+- The user's untracked `stratchpad/` is excluded from ruff, ty and pytest and must be left alone ([[stratchpad-is-users]]).
 - Archive with `/opsx:archive` (reconcile first, per `openspec/config.yaml`); merge/PR is the user's call.
 - Follow-up changes: ast-grep style-rule change (ban `from_`-style identifiers), Euler/RPY (D24), manipulator/DH/Jacobian.
 
