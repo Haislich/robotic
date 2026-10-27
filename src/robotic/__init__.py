@@ -1,13 +1,16 @@
 """Hand-implemented robot kinematics that reads like a handwritten exam solution."""
 
-from robotic.geometry import Frame, FreeAxis, Point, UnitVector, Vector, ZeroVectorError
-from robotic.rotation import (
-    AxisAngle,
-    AxisAngleSolutions,
-    Index3,
-    Rotation,
-    ValidityCondition,
+from robotic.geometry import (
+    Direction,
+    Displacement,
+    Frame,
+    FrameMismatchError,
+    FreeAxis,
+    Point,
+    Position,
+    ZeroVectorError,
 )
+from robotic.rotation import AxisAngle, AxisAngleSolutions, Index3, Rotation
 from robotic.symbolic import (
     Compiled,
     MissingParameterError,
@@ -25,7 +28,10 @@ __all__ = [
     "AxisAngle",
     "AxisAngleSolutions",
     "Compiled",
+    "Direction",
+    "Displacement",
     "Frame",
+    "FrameMismatchError",
     "FreeAxis",
     "Index3",
     "Index4",
@@ -34,14 +40,12 @@ __all__ = [
     "ParameterShapeError",
     "ParameterTypeError",
     "Point",
+    "Position",
     "Rotation",
     "Scalar",
     "ScalarLike",
     "Symbol",
     "Symbolic",
     "Transform",
-    "UnitVector",
-    "ValidityCondition",
-    "Vector",
     "ZeroVectorError",
 ]

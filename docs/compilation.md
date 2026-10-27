@@ -1,8 +1,10 @@
 # Compilation
 
 Numbers come only from compiling a quantity whose frame of resolution is already
-chosen symbolically. `lambdify` turns any quantity (scalar, point, vector, rotation,
-transform) into a JIT-compiled JAX function of a parameters dataclass you write.
+chosen symbolically. `compile` turns any quantity (scalar, position, displacement,
+rotation, transform) into a JIT-compiled JAX function of a parameters dataclass you
+write. The expressions are compiled as written, without simplifying them; repeated
+subexpressions are computed once, so long chains compile quickly.
 
 ## The parameters dataclass
 
@@ -27,30 +29,30 @@ matched to symbols by name; order is irrelevant and extra fields are allowed.
 ...     l2: float
 >>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
 >>> l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
->>> base_tool = Transform(target=Base, source=Link1).with_rotation(
-...     Rotation.about_z(q1, target=Base, source=Link1)
-... ) @ (
-...     Transform(target=Link1, source=Tool)
-...     .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
-...     .with_translation(Link1.vector(l1, 0, 0))
+>>> base_tool = Rotation.about_z(q1, target=Base, source=Link1).homogeneous() @ (
+...     Rotation.about_z(q2, target=Link1, source=Tool).homogeneous(
+...         Link1.position(l1, 0, 0)
+...     )
 ... )
->>> tip = (base_tool @ Tool.point(l2, 0, 0)).simplify()
->>> position = tip.lambdify(Arm)
+>>> tip = (base_tool @ Tool.position(l2, 0, 0)).simplify()
+>>> position = tip.compile(Arm)
 >>> result = position(Arm(q1=0.0, q2=0.0, l1=1.0, l2=0.5))
 >>> result
-Numeric[Point[Base]]([1.5, 0.0, 0.0])
+Numeric[Position[Base]]([1.5, 0.0, 0.0])
 
 ```
 
-The result keeps the frame in its type, `Numeric[Point[Base]]`, and names it when
+The result keeps the frame in its type, `Numeric[Position[Base]]`, and names it when
 printed. Simulation code reads the bare components, a float64 JAX array in the natural
-shape: `()` for a scalar, `(3,)` for a point or vector, `(3, 3)` for a rotation,
-`(4, 4)` for a transform.
+shape: `()` for a scalar, `(3,)` for a position or displacement, `(3, 3)` for a
+rotation, `(4, 4)` for a transform. Floats live here, on the numeric side; the
+symbolic side takes exact numbers only. Compiled values have no `==`: compare their
+components with a tolerance, e.g. `jnp.allclose(a.components, b.components)`.
 
 ```python
 >>> result.components.shape, str(result.components.dtype)
 ((3,), 'float64')
->>> base_tool.lambdify(Arm)(Arm(q1=0.0, q2=0.0, l1=1.0, l2=0.5)).components.shape
+>>> base_tool.compile(Arm)(Arm(q1=0.0, q2=0.0, l1=1.0, l2=0.5)).components.shape
 (4, 4)
 
 ```
@@ -66,13 +68,13 @@ True
 ```
 
 Calling with anything but an `Arm`, or building an `Arm` without a field, is a type
-error.
+error, and raises when executed.
 
 ## Validation, once, at compile time
 
 Compiling checks the dataclass once: every field is annotated `float` or
-`jax.typing.ArrayLike`, and every free symbol has a field. Nothing is checked on each
-call.
+`jax.typing.ArrayLike`, and every free symbol has a field. Each call only checks that
+it was given an instance of the dataclass.
 
 ```python
 >>> @dataclass(frozen=True)
@@ -81,7 +83,7 @@ call.
 ...     q1: float
 ...     q2: float
 ...     l1: float
->>> tip.lambdify(Shortened)
+>>> tip.compile(Shortened)
 Traceback (most recent call last):
 ...
 robotic.symbolic.MissingParameterError: Shortened has no field for l2
@@ -89,7 +91,7 @@ robotic.symbolic.MissingParameterError: Shortened has no field for l2
 ... class Misannotated:
 ...     """A joint value annotated as text."""
 ...     q1: str
->>> q1.lambdify(Misannotated)
+>>> q1.compile(Misannotated)
 Traceback (most recent call last):
 ...
 robotic.symbolic.ParameterTypeError: field 'q1' of Misannotated must be annotated float or ArrayLike
@@ -116,7 +118,7 @@ configuration and the frame is kept:
 ... class Joint:
 ...     """One joint value, batchable."""
 ...     q1: jax.typing.ArrayLike
->>> direction = Base.vector(q1.cos(), q1.sin(), 0).lambdify(Joint)
+>>> direction = Base.displacement(q1.cos(), q1.sin(), 0).compile(Joint)
 >>> def direction_at(value: jax.typing.ArrayLike):
 ...     return direction(Joint(q1=value))
 >>> batch = jax.vmap(direction_at)(jnp.array([0.0, jnp.pi / 2]))
@@ -135,7 +137,7 @@ Derivatives are taken of `.components`, the bare numbers. The derivative of a ro
 matrix is not a rotation, so it does not come back as a `Numeric[Rotation[...]]`:
 
 ```python
->>> turn = Rotation.about_z(q1, target=Base, source=Link1).lambdify(Joint)
+>>> turn = Rotation.about_z(q1, target=Base, source=Link1).compile(Joint)
 >>> derivative = jax.jacrev(lambda value: turn(Joint(q1=value)).components)(0.0)
 >>> derivative.shape, float(derivative[1, 0]), float(derivative[0, 1])
 ((3, 3), 1.0, -1.0)
@@ -153,42 +155,20 @@ robotic.symbolic.ParameterShapeError: field 'q1' holds an array of shape (2,); e
 
 ```
 
-## Axis-angle, with its validity flag
+## Axis-angle
 
-The axis-angle solutions are formulas valid where sin θ ≠ 0. Compile them as a whole:
-the result carries both solutions and a flag, so the flag cannot be left out by
-accident. The components have shape `(2, 4)`: one row per solution, columns
-r_x, r_y, r_z, θ. `valid()` exists only on compiled axis-angle solutions, and is true
-where |sin θ| exceeds the tolerance (default `1e-9`).
+The axis-angle solutions compile as a whole: the components have shape `(2, 4)`, one
+row per solution, columns r_x, r_y, r_z, θ.
 
 ```python
 >>> solutions = Rotation.about_z(q1, target=Base, source=Tool).to_axis_angle()
->>> compiled = solutions.lambdify(Joint)
->>> regular = compiled(Joint(q1=0.5))
->>> regular.components.tolist()
+>>> compiled = solutions.compile(Joint)
+>>> compiled(Joint(q1=0.5)).components.tolist()
 [[0.0, 0.0, 1.0, 0.5], [0.0, 0.0, -1.0, -0.5]]
->>> bool(regular.valid())
-True
->>> bool(compiled(Joint(q1=0.0)).valid()), bool(compiled(Joint(q1=1e-12)).valid())
-(False, False)
->>> bool(compiled(Joint(q1=float(jnp.pi))).valid())
-False
 
 ```
 
-At θ = π the regular formulas give an axis only by the luck of float rounding, and near
-θ = 0 the axis means nothing; the flag reports both. When it is false, the caller
-decides: `to_axis_angle` on the exact rotation recognizes the identity and the half
-turn exactly.
-
-An axis also compiles alone, like any vector, but then nothing marks the singular
-configurations: at q = 0 it is not a number.
-
-```python
->>> axis = solutions.first.axis.lambdify(Joint)
->>> axis(Joint(q1=0.5)).components.tolist()
-[0.0, 0.0, 1.0]
->>> axis(Joint(q1=0.0)).components.tolist()
-[0.0, 0.0, nan]
-
-```
+For a symbolic rotation these are the regular formulas, which break where sin θ = 0
+(θ = 0 and θ = π). What a compiled function returns there is not decided yet: the
+library promises no value at singular configurations. When exact values are known,
+`to_axis_angle` on the exact rotation recognizes the identity and the half turn.

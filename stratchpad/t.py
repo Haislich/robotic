@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from robotic import Frame, Rotation, Symbol, Vector
+from robotic import Frame, FreeAxis, Rotation, Symbol
 
 
 class B1(Frame): ...
@@ -23,11 +23,6 @@ class Joint:
     q: float
 
 
-monster_n = monster.lambdify(Joint)
-print(monster_n(Joint(1)))
-print(monster_n(Joint(2)))
-
-
-monster_n = monster.simplify().lambdify(Joint)
+monster_n = monster.compile(Joint)
 print(monster_n(Joint(1)))
 print(monster_n(Joint(2)))

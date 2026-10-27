@@ -9,7 +9,7 @@ import operator
 import typing
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self, override
+from typing import TYPE_CHECKING, ClassVar, NoReturn, Self, override
 
 import jax
 import jax.numpy as jnp
@@ -22,16 +22,46 @@ if TYPE_CHECKING:
 
     from _typeshed import DataclassInstance
 
-    from robotic.geometry import Frame
-    from robotic.rotation import AxisAngleSolutions
-
 jax.config.update(name="jax_enable_x64", val=True)
 
-type ScalarLike = Scalar | int | float
+type ScalarLike = Scalar | int
 
 
-class Symbolic(ABC):
-    """A symbolic quantity: simplifiable, printable as LaTeX and compilable to JAX."""
+class _Incomparable:
+    """No equality, hash or truth value: Python's defaults would answer silently."""
+
+    __slots__ = ()
+
+    _ADVICE: ClassVar[str] = (
+        "symbolic values have no equality: whether two of them are equal on the "
+        "whole domain cannot be known; compile them and compare the numbers at a "
+        "configuration"
+    )
+
+    @override
+    def __eq__(self, other: object) -> NoReturn:
+        raise TypeError(self._ADVICE)
+
+    @override
+    def __ne__(self, other: object) -> NoReturn:
+        raise TypeError(self._ADVICE)
+
+    @override
+    def __hash__(self) -> NoReturn:
+        raise TypeError(self._ADVICE)
+
+    def __bool__(self) -> NoReturn:
+        raise TypeError(self._ADVICE)
+
+
+class Symbolic(_Incomparable, ABC):
+    """A symbolic quantity: simplifiable, printable as LaTeX and compilable to JAX.
+
+    It has no equality, hash or truth value: `==`, `!=`, `hash` and `bool` raise
+    `TypeError`.
+    """
+
+    __slots__ = ()
 
     @abstractmethod
     def simplify(self) -> Self:
@@ -57,7 +87,7 @@ class Symbolic(ABC):
         lines = (" & ".join(entry.latex() for entry in row) for row in rows)
         return rf"\begin{{bmatrix}} {r' \\ '.join(lines)} \end{{bmatrix}}"
 
-    def lambdify[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]:
+    def compile[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]:
         """Compile the quantity to a JAX function of a parameters dataclass.
 
         Args:
@@ -71,31 +101,27 @@ class Symbolic(ABC):
         return Compiled(self, parameters)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Layout:
     """How a quantity flattens to scalars for compilation.
 
     Attributes:
-        label: The quantity's type as printed in a compiled result, e.g. `Point[Base]`.
+        label: The quantity's type as printed in a compiled result, e.g.
+            `Position[Base]`.
         entries: The scalars, row-major.
         shape: The natural shape of the compiled components.
-        tolerance: When set, the compiled components are the flag `|entry| > tolerance`.
-        condition: When set, a validity condition compiled alongside into the result's
-            flag; otherwise the flag is true.
     """
 
     label: str
     entries: tuple[Scalar, ...]
     shape: tuple[int, ...]
-    tolerance: float | None = None
-    condition: Symbolic | None = None
 
 
 class Scalar(Symbolic):
-    """A symbolic scalar expression.
+    """A symbolic scalar expression, exact: built from integers, constants and symbols.
 
-    Arithmetic accepts a scalar, an `int` or a `float` on either side. Integers stay
-    exact; floats enter the expression as floating-point constants, as written.
+    Arithmetic accepts a scalar or an `int` on either side; a `float` is rejected, so
+    every value stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`).
     """
 
     __slots__ = ("_expression",)
@@ -106,8 +132,13 @@ class Scalar(Symbolic):
         """Build a constant scalar.
 
         Args:
-            value: An exact integer, a float kept as written, or a scalar to copy.
+            value: An exact integer, or a scalar to copy.
+
+        Raises:
+            TypeError: The value is not an `int` or a `Scalar` (a `float`, a `bool`).
         """
+        if not Scalar._is_exact(value):
+            raise TypeError(Scalar._not_exact(value))
         self._expression = Scalar._expression_of(value)
 
     @classmethod
@@ -117,21 +148,33 @@ class Scalar(Symbolic):
         return scalar
 
     @staticmethod
+    def _is_exact(value: object) -> bool:
+        return isinstance(value, Scalar | int) and not isinstance(value, bool)
+
+    @staticmethod
+    def _not_exact(value: object) -> str:
+        return (
+            f"a symbolic scalar takes an exact number, an int or a Scalar, not "
+            f"{type(value).__name__} {value!r}; write Scalar(3) / 10 for 0.3 and "
+            "Scalar.pi() for pi"
+        )
+
+    @staticmethod
     def _expression_of(value: ScalarLike) -> sympy.Expr:
+        if not Scalar._is_exact(value):
+            raise TypeError(Scalar._not_exact(value))
         match value:
             case Scalar():
                 return value._expression
             case int():
                 return sympy.Integer(value)
-            case float():
-                return sympy.Float(value)
 
     def _combined(
         self,
         other: ScalarLike,
         operation: Callable[[sympy.Expr, sympy.Expr], sympy.Expr],
     ) -> Scalar:
-        if not isinstance(other, Scalar | int | float):
+        if not Scalar._is_exact(other):
             return NotImplemented
         return Scalar._wrap(operation(self._expression, Scalar._expression_of(other)))
 
@@ -164,7 +207,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.add)
 
-    def __radd__(self, other: float) -> Scalar:
+    def __radd__(self, other: int) -> Scalar:
         """Add from the left.
 
         Returns:
@@ -180,7 +223,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.sub)
 
-    def __rsub__(self, other: float) -> Scalar:
+    def __rsub__(self, other: int) -> Scalar:
         """Subtract from a number.
 
         Returns:
@@ -196,7 +239,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.mul)
 
-    def __rmul__(self, other: float) -> Scalar:
+    def __rmul__(self, other: int) -> Scalar:
         """Multiply from the left.
 
         Returns:
@@ -212,7 +255,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.truediv)
 
-    def __rtruediv__(self, other: float) -> Scalar:
+    def __rtruediv__(self, other: int) -> Scalar:
         """Divide a number.
 
         Returns:
@@ -228,7 +271,7 @@ class Scalar(Symbolic):
         """
         return self._combined(exponent, operator.pow)
 
-    def __rpow__(self, base: float) -> Scalar:
+    def __rpow__(self, base: int) -> Scalar:
         """Raise a number to this power.
 
         Returns:
@@ -295,22 +338,22 @@ class Scalar(Symbolic):
         """
         return Scalar._wrap(sympy.exp(self._expression))
 
-    def is_zero(self) -> bool:
-        """Whether the scalar simplifies to exactly zero.
-
-        Returns:
-            True only when simplification proves the scalar is identically zero.
-        """
-        return bool(sympy.simplify(self._expression) == 0)
-
     @override
     def simplify(self) -> Scalar:
-        """Simplify the expression.
+        """An equal expression, in a simpler form when one is found.
 
         Returns:
-            The simplified scalar.
+            The simplified scalar; its form is not promised.
         """
-        return Scalar._wrap(sympy.simplify(self._expression))
+        return Scalar._wrap(self._simplified())
+
+    def _simplified(self) -> sympy.Expr:
+        match sympy.factor_terms(sympy.trigsimp(self._expression, method="fu")):
+            case sympy.Expr() as simplified:
+                return simplified
+            case other:
+                message = f"simplification returned a non-expression {other!r}"
+                raise TypeError(message)
 
     @override
     def latex(self) -> str:
@@ -335,6 +378,14 @@ class Scalar(Symbolic):
         return str(self._expression)
 
 
+def _is_zero(value: Scalar) -> bool:
+    return bool(value._simplified() == 0)
+
+
+def _has_symbols(value: Scalar) -> bool:
+    return bool(value._expression.free_symbols)
+
+
 class Symbol(Scalar):
     """A real symbol: a variable of the formulas, matched by name at compile time."""
 
@@ -345,7 +396,13 @@ class Symbol(Scalar):
 
         Args:
             name: The symbol's name; equal names give the same symbol.
+
+        Raises:
+            TypeError: The name is not a string.
         """
+        if not isinstance(name, str):
+            message = f"a symbol's name is a string, not {type(name).__name__}"
+            raise TypeError(message)
         self._expression = sympy.Symbol(name, real=True)
 
     @override
@@ -413,6 +470,9 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
     def __init__(self, quantity: T, parameters: type[P]) -> None:
         """Compile the quantity; validation happens once, here.
 
+        The expressions are compiled as written, without simplification; repeated
+        subexpressions are computed once.
+
         Args:
             quantity: The symbolic quantity.
             parameters: A dataclass whose fields name the symbols of the quantity,
@@ -420,18 +480,20 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
                 (batched code). Extra fields are allowed.
 
         Raises:
+            TypeError: `parameters` is not a dataclass.
             ParameterTypeError: A field is annotated neither `float` nor `ArrayLike`.
             MissingParameterError: A free symbol of the quantity has no field.
         """
+        if not dataclasses.is_dataclass(parameters):
+            message = f"parameters must be a dataclass, not {parameters!r}"
+            raise TypeError(message)
         layout = quantity._layout()
         hints = typing.get_type_hints(parameters)
         names = tuple(field.name for field in dataclasses.fields(parameters))
         for name in names:
             if hints[name] is not float and hints[name] != ArrayLike:
                 raise ParameterTypeError(parameters, name)
-        condition = layout.condition._layout() if layout.condition else None
-        flag = condition.entries if condition else ()
-        expressions = [entry._expression for entry in (*layout.entries, *flag)]
+        expressions = [entry._expression for entry in layout.entries]
         free = frozenset(
             str(symbol)
             for expression in expressions
@@ -441,18 +503,11 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         if missing:
             raise MissingParameterError(parameters, missing)
         symbols = [sympy.Symbol(name, real=True) for name in names]
+        self._parameters = parameters
         self._names = names
         self._layout = layout
-        self._condition = condition
-        self._function = sympy.lambdify(symbols, expressions, modules="jax")
+        self._function = sympy.lambdify(symbols, expressions, modules="jax", cse=True)
         self._evaluate = jax.jit(self._kernel)
-
-    @staticmethod
-    def _shaped(values: list[jax.Array], layout: Layout) -> jax.Array:
-        components = jnp.stack(values).reshape(layout.shape)
-        if layout.tolerance is None:
-            return components
-        return jnp.abs(components) > layout.tolerance
 
     def _kernel(self, *values: jax.Array) -> Numeric[T]:
         for name, value in zip(self._names, values, strict=True):
@@ -461,14 +516,8 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         results = [
             jnp.asarray(entry, dtype=jnp.float64) for entry in self._function(*values)
         ]
-        size = len(self._layout.entries)
-        components = self._shaped(results[:size], self._layout)
-        valid = (
-            self._shaped(results[size:], self._condition)
-            if self._condition
-            else jnp.ones((), dtype=bool)
-        )
-        return Numeric(self._layout.label, components, valid)
+        components = jnp.stack(results).reshape(self._layout.shape)
+        return Numeric(self._layout.label, components)
 
     def __call__(self, values: P) -> Numeric[T]:
         """Evaluate at one configuration.
@@ -481,71 +530,70 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
 
         Returns:
             The compiled result.
+
+        Raises:
+            TypeError: `values` is not an instance of the parameters dataclass.
         """
+        if not isinstance(values, self._parameters):
+            message = (
+                f"values must be a {self._parameters.__name__}, "
+                f"not {type(values).__name__}"
+            )
+            raise TypeError(message)
         return self._evaluate(*(getattr(values, name) for name in self._names))
 
 
-class Numeric[T: Symbolic]:
+class Numeric[T: Symbolic](_Incomparable):
     """The compiled value of a `T`: bare components, with the meaning kept in the type.
 
-    A registered JAX pytree: the components and the validity flag are its children,
-    the printed type its static data, so it passes through `jax.jit`, `jax.vmap` and
-    `jax.grad`.
+    A registered JAX pytree: the components are its only child, the printed type its
+    static data, so it passes through `jax.jit`, `jax.vmap` and `jax.grad`. It has no
+    equality, hash or truth value: compare `.components` with a tolerance.
     """
 
-    __slots__ = ("_components", "_label", "_valid")
+    __slots__ = ("_components", "_label")
 
-    def __init__(self, label: str, components: jax.Array, valid: jax.Array) -> None:
-        """Pair the components with the printed type and the validity flag.
+    _ADVICE: ClassVar[str] = (
+        "compiled values have no equality: compare their .components with a "
+        "tolerance, e.g. jnp.allclose(a.components, b.components)"
+    )
+
+    def __init__(self, label: str, components: jax.Array) -> None:
+        """Pair the components with the printed type.
 
         Args:
-            label: The quantity's type as printed, e.g. `Point[Base]`.
-            components: Float64 components in the natural shape (a flag for a
-                validity condition); leading axes under `vmap` are configurations.
-            valid: Where the quantity's validity condition holds; true when it has
-                none.
+            label: The quantity's type as printed, e.g. `Position[Base]`.
+            components: Float64 components in the natural shape; leading axes under
+                `vmap` are configurations.
         """
         self._label = label
         self._components = components
-        self._valid = valid
 
     @property
     def components(self) -> jax.Array:
         """The components in the natural shape of `T`, per configuration."""
         return self._components
 
-    def valid[F: Frame](self: Numeric[AxisAngleSolutions[F]]) -> jax.Array:
-        """Whether the axis-angle solutions are valid by more than the tolerance.
-
-        Returns:
-            A boolean of shape `()` per configuration.
-        """
-        return self._valid
-
     @override
     def __repr__(self) -> str:
         """Print the type and the components.
 
         Returns:
-            E.g. `Numeric[Point[Base]]([1.0, 0.5, 0.0])`; under tracing the components
-            print as JAX prints a tracer.
+            E.g. `Numeric[Position[Base]]([1.0, 0.5, 0.0])`; under tracing the
+            components print as JAX prints a tracer.
         """
         components = self._components
         shown = components if isinstance(components, Tracer) else components.tolist()
         return f"Numeric[{self._label}]({shown})"
 
     @staticmethod
-    def _flatten(
-        numeric: Numeric[Symbolic],
-    ) -> tuple[tuple[jax.Array, jax.Array], str]:
-        return (numeric._components, numeric._valid), numeric._label
+    def _flatten(numeric: Numeric[Symbolic]) -> tuple[tuple[jax.Array], str]:
+        return (numeric._components,), numeric._label
 
     @staticmethod
-    def _unflatten(
-        label: str, children: tuple[jax.Array, jax.Array]
-    ) -> Numeric[Symbolic]:
-        components, valid = children
-        return Numeric[Symbolic](label, components, valid)
+    def _unflatten(label: str, children: tuple[jax.Array]) -> Numeric[Symbolic]:
+        (components,) = children
+        return Numeric[Symbolic](label, components)
 
 
 jax.tree_util.register_pytree_node(Numeric, Numeric._flatten, Numeric._unflatten)

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from spatialmath import SE3
 
-from robotic import Frame, Point, Rotation, Scalar, Transform, Vector
+from robotic import Displacement, Frame, Position, Rotation, Scalar, Transform
 
 
 class Base(Frame, notation="0"):
@@ -46,23 +46,16 @@ def entries[A: Frame, B: Frame](transform: Transform[A, B]) -> list[list[str]]:
 
 
 def planar_arm() -> Transform[Base, Tool]:
-    base_link1 = Transform(target=Base, source=Link1).with_rotation(
-        Rotation.about_z(q1, target=Base, source=Link1)
-    )
-    link1_tool = (
-        Transform(target=Link1, source=Tool)
-        .with_rotation(Rotation.about_z(q2, target=Link1, source=Tool))
-        .with_translation(Link1.vector(l1, 0, 0))
+    base_link1 = Rotation.about_z(q1, target=Base, source=Link1).homogeneous()
+    link1_tool = Rotation.about_z(q2, target=Link1, source=Tool).homogeneous(
+        Link1.position(l1, 0, 0)
     )
     return base_link1 @ link1_tool
 
 
 def base_link1_lifted() -> Transform[Base, Link1]:
-    return (
-        Transform(target=Base, source=Link1)
-        .with_rotation(Rotation.about_z(q1, target=Base, source=Link1))
-        .with_translation(Base.vector(0, 0, d1))
-    )
+    rotation = Rotation.about_z(q1, target=Base, source=Link1)
+    return rotation.homogeneous(Base.position(0, 0, d1))
 
 
 def test_matrix_layout() -> None:
@@ -83,12 +76,12 @@ def test_reading_the_translation_from_the_entries() -> None:
 def test_rotation_and_translation_are_its_parts() -> None:
     transform = base_link1_lifted()
     assert_type(transform.rotation, Rotation[Base, Link1])
-    assert_type(transform.translation, Vector[Base])
-    assert repr(transform.translation) == "Vector[Base](0, 0, d1)"
+    assert_type(transform.translation, Position[Base])
+    assert repr(transform.translation) == "Position[Base](0, 0, d1)"
 
 
-def test_identity_between_two_frames() -> None:
-    transform = Transform(target=Base, source=Link1)
+def test_coincident_origins() -> None:
+    transform = Rotation.identity(target=Base, source=Link1).homogeneous()
     assert_type(transform, Transform[Base, Link1])
     assert entries(transform) == [
         ["1", "0", "0", "0"],
@@ -98,14 +91,11 @@ def test_identity_between_two_frames() -> None:
     ]
 
 
-def test_setting_a_part_returns_a_new_transform() -> None:
+def test_taking_the_homogeneous_matrix_leaves_the_rotation_unchanged() -> None:
     rotation = Rotation.about_z(q1, target=Base, source=Link1)
-    t = Transform(target=Base, source=Link1).with_rotation(rotation)
-    u = t.with_translation(Base.vector(0, 0, d1))
-    assert_type(u, Transform[Base, Link1])
-    assert repr(t.translation) == "Vector[Base](0, 0, 0)"
-    assert repr(u.translation) == "Vector[Base](0, 0, d1)"
-    assert u.rotation is rotation
+    transform = rotation.homogeneous(Base.position(0, 0, d1))
+    assert transform.rotation is rotation
+    assert str(rotation.entry(3, 3)) == "1"
 
 
 def test_forward_kinematics_chain() -> None:
@@ -124,21 +114,21 @@ def test_inverse_composes_to_identity() -> None:
 
 
 def test_tip_of_a_planar_2r_arm() -> None:
-    tip = (planar_arm() @ Tool.point(l2, 0, 0)).simplify()
-    assert_type(tip, Point[Base])
+    tip = (planar_arm() @ Tool.position(l2, 0, 0)).simplify()
+    assert_type(tip, Position[Base])
     assert repr(tip) == (
-        "Point[Base](l1*cos(q1) + l2*cos(q1 + q2), l1*sin(q1) + l2*sin(q1 + q2), 0)"
+        "Position[Base](l1*cos(q1) + l2*cos(q1 + q2), l1*sin(q1) + l2*sin(q1 + q2), 0)"
     )
 
 
-def test_translation_does_not_move_a_vector() -> None:
-    transform = Transform(target=Base, source=Tool).with_translation(
-        Base.vector(5, 0, 0)
+def test_translation_does_not_move_a_displacement() -> None:
+    transform = Rotation.identity(target=Base, source=Tool).homogeneous(
+        Base.position(5, 0, 0)
     )
-    moved = transform @ Tool.vector(1, 0, 0)
-    assert_type(moved, Vector[Base])
-    assert repr(moved) == "Vector[Base](1, 0, 0)"
-    assert repr(transform @ Tool.point(1, 0, 0)) == "Point[Base](6, 0, 0)"
+    moved = transform @ Tool.displacement(1, 0, 0)
+    assert_type(moved, Displacement[Base])
+    assert repr(moved) == "Displacement[Base](1, 0, 0)"
+    assert repr(transform @ Tool.position(1, 0, 0)) == "Position[Base](6, 0, 0)"
 
 
 def test_a_transform_rejects_another_operand_at_runtime() -> None:
@@ -161,10 +151,10 @@ def test_latex_names_both_frames() -> None:
     [(0.0, 0.0), (0.3, -1.2), (math.pi / 2, math.pi), (-math.pi + 1e-6, 1e-6)],
 )
 def test_chain_matches_the_oracle(first: float, second: float) -> None:
-    compiled = planar_arm().lambdify(Joints)
+    compiled = planar_arm().compile(Joints)
     numbers = compiled(Joints(q1=first, q2=second, l1=1.0, l2=0.5)).components
     oracle = SE3.Rz(first) * SE3.Rz(second, t=[1.0, 0, 0])
     np.testing.assert_allclose(np.asarray(numbers), oracle.A, atol=1e-12)
-    inverse = planar_arm().inverse().lambdify(Joints)
+    inverse = planar_arm().inverse().compile(Joints)
     inverse_numbers = inverse(Joints(q1=first, q2=second, l1=1.0, l2=0.5)).components
     np.testing.assert_allclose(np.asarray(inverse_numbers), oracle.inv().A, atol=1e-12)

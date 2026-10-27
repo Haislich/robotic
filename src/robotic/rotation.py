@@ -3,8 +3,24 @@
 from dataclasses import dataclass
 from typing import Literal, Self, final, overload, override
 
-from robotic.geometry import Frame, FreeAxis, UnitVector, Vector
-from robotic.symbolic import Layout, Scalar, ScalarLike, Symbolic
+from robotic.geometry import (
+    Direction,
+    Displacement,
+    Frame,
+    FrameMismatchError,
+    FreeAxis,
+    Position,
+)
+from robotic.symbolic import (
+    Layout,
+    Scalar,
+    ScalarLike,
+    Symbolic,
+    _has_symbols,
+    _Incomparable,
+    _is_zero,
+)
+from robotic.transform import Transform, _Parts
 
 type Index3 = Literal[1, 2, 3]
 
@@ -64,74 +80,8 @@ class _Matrix3:
 _IDENTITY = _Matrix3((1, 0, 0, 0, 1, 0, 0, 0, 1))
 
 
-class ValidityCondition(Symbolic):
-    """Where a symbolic result is valid: wherever `expression` is not zero.
-
-    Compiled, it is the flag `|expression| > tolerance`, so values within the tolerance
-    of a singular configuration are reported invalid.
-    """
-
-    __slots__ = ("_expression", "_tolerance")
-
-    def __init__(self, expression: Scalar, tolerance: float) -> None:
-        """State the condition `expression != 0`.
-
-        Args:
-            expression: The scalar that vanishes at singular configurations.
-            tolerance: The margin applied when compiled.
-        """
-        self._expression = expression
-        self._tolerance = tolerance
-
-    @property
-    def expression(self) -> Scalar:
-        """The scalar that vanishes at singular configurations."""
-        return self._expression
-
-    @property
-    def tolerance(self) -> float:
-        """The margin applied when compiled."""
-        return self._tolerance
-
-    @override
-    def simplify(self) -> Self:
-        """Simplify the expression.
-
-        Returns:
-            The same condition with a simplified expression.
-        """
-        return type(self)(self._expression.simplify(), self._tolerance)
-
-    @override
-    def latex(self) -> str:
-        """Render as the LaTeX of `expression != 0`.
-
-        Returns:
-            The LaTeX source.
-        """
-        return rf"{self._expression.latex()} \neq 0"
-
-    @override
-    def _layout(self) -> Layout:
-        return Layout(
-            label="ValidityCondition",
-            entries=(self._expression,),
-            shape=(),
-            tolerance=self._tolerance,
-        )
-
-    @override
-    def __repr__(self) -> str:
-        """Print the condition.
-
-        Returns:
-            E.g. `ValidityCondition(Abs(sin(q)) != 0)`.
-        """
-        return f"ValidityCondition({self._expression} != 0)"
-
-
-@dataclass(frozen=True)
-class AxisAngle[F: Frame]:
+@dataclass(frozen=True, eq=False)
+class AxisAngle[F: Frame](_Incomparable):
     """One axis-angle representation: a rotation by `angle` about `axis`.
 
     Attributes:
@@ -139,35 +89,30 @@ class AxisAngle[F: Frame]:
         angle: The angle in radians, in (-pi, pi].
     """
 
-    axis: UnitVector[F]
+    axis: Direction[F]
     angle: Scalar
 
 
 class AxisAngleSolutions[F: Frame](Symbolic):
-    """The two axis-angle solutions of a rotation and where they are valid.
+    """The two axis-angle solutions of a rotation.
 
     Course convention: regular case (r, theta) and (-r, -theta); half turn (r, pi) and
-    (-r, pi); identity (a, 0) and (-a, 0) with a free axis a.
+    (-r, pi); identity (a, 0) and (-a, 0) with a free axis a. For a rotation with a
+    symbol, the regular formulas, wherever they hold; nothing predicts where they
+    break.
     """
 
-    __slots__ = ("_first", "_second", "_valid_when")
+    __slots__ = ("_first", "_second")
 
-    def __init__(
-        self,
-        first: AxisAngle[F],
-        second: AxisAngle[F],
-        valid_when: ValidityCondition,
-    ) -> None:
-        """Pair the two solutions with their validity condition.
+    def __init__(self, first: AxisAngle[F], second: AxisAngle[F]) -> None:
+        """Pair the two solutions.
 
         Args:
             first: The solution with the angle in [0, pi].
             second: The solution with the opposite axis.
-            valid_when: Where both solutions are valid.
         """
         self._first = first
         self._second = second
-        self._valid_when = valid_when
 
     @property
     def first(self) -> AxisAngle[F]:
@@ -179,14 +124,9 @@ class AxisAngleSolutions[F: Frame](Symbolic):
         """The solution with the opposite axis."""
         return self._second
 
-    @property
-    def valid_when(self) -> ValidityCondition:
-        """Where both solutions are valid."""
-        return self._valid_when
-
     @override
     def simplify(self) -> Self:
-        """Simplify both solutions and the condition.
+        """Simplify both solutions.
 
         Returns:
             The same solutions, simplified.
@@ -194,12 +134,11 @@ class AxisAngleSolutions[F: Frame](Symbolic):
         return type(self)(
             AxisAngle(self._first.axis.simplify(), self._first.angle.simplify()),
             AxisAngle(self._second.axis.simplify(), self._second.angle.simplify()),
-            self._valid_when.simplify(),
         )
 
     @override
     def latex(self) -> str:
-        """Render both solutions and the condition.
+        """Render both solutions.
 
         Returns:
             The LaTeX source.
@@ -207,8 +146,7 @@ class AxisAngleSolutions[F: Frame](Symbolic):
         first, second = self._first, self._second
         return (
             rf"r = {first.axis.latex()},\ \theta = {first.angle.latex()} \quad "
-            rf"r = {second.axis.latex()},\ \theta = {second.angle.latex()} \quad "
-            rf"\text{{valid when }} {self._valid_when.latex()}"
+            rf"r = {second.axis.latex()},\ \theta = {second.angle.latex()}"
         )
 
     @override
@@ -227,20 +165,19 @@ class AxisAngleSolutions[F: Frame](Symbolic):
                 second.angle,
             ),
             shape=(2, 4),
-            condition=self._valid_when,
         )
 
     @override
     def __repr__(self) -> str:
-        """Print both solutions and the condition.
+        """Print both solutions.
 
         Returns:
-            The solutions as (axis, angle) pairs, then the condition.
+            The solutions as (axis, angle) pairs.
         """
         first, second = self._first, self._second
         return (
             f"AxisAngleSolutions(({first.axis!r}, {first.angle}), "
-            f"({second.axis!r}, {second.angle}), {self._valid_when!r})"
+            f"({second.axis!r}, {second.angle}))"
         )
 
 
@@ -259,7 +196,7 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
     _matrix: _Matrix3
 
     def __init__(
-        self, axis: UnitVector[Target], angle: ScalarLike, *, source: type[Source]
+        self, axis: Direction[Target], angle: ScalarLike, *, source: type[Source]
     ) -> None:
         """The rotation by `angle` about `axis` (Rodrigues); spelled `about_axis`.
 
@@ -267,7 +204,14 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
             axis: The unit axis, resolved in the target frame, which it fixes.
             angle: The angle in radians, positive counterclockwise about the axis.
             source: The frame B of ^A R_B.
+
+        Raises:
+            TypeError: The axis is not a direction.
         """
+        if not isinstance(axis, Direction):
+            message = f"a rotation's axis is a direction, not {axis!r}"
+            raise TypeError(message)
+        Rotation._require_frame(source)
         cosine, sine = Scalar(angle).cos(), Scalar(angle).sin()
         versine = 1 - cosine
         x, y, z = axis.x, axis.y, axis.z
@@ -287,10 +231,23 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
             )
         )
 
+    @staticmethod
+    def _require_frame(value: object) -> None:
+        if not (isinstance(value, type) and issubclass(value, Frame)):
+            message = f"expected a frame, a subclass of Frame, not {value!r}"
+            raise TypeError(message)
+
+    @staticmethod
+    def _same_frame(operation: str, expected: type[Frame], found: type[Frame]) -> None:
+        if found is not expected:
+            raise FrameMismatchError(operation, expected, found)
+
     @classmethod
     def _of_matrix[A: Frame, B: Frame](
         cls, target: type[A], source: type[B], matrix: _Matrix3
     ) -> Rotation[A, B]:
+        Rotation._require_frame(target)
+        Rotation._require_frame(source)
         rotation: Rotation[A, B] = object.__new__(Rotation)
         rotation._target = target
         rotation._source = source
@@ -346,7 +303,7 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
 
     @classmethod
     def about_axis[A: Frame, B: Frame](
-        cls, axis: UnitVector[A], angle: ScalarLike, *, source: type[B]
+        cls, axis: Direction[A], angle: ScalarLike, *, source: type[B]
     ) -> Rotation[A, B]:
         """The rotation by `angle` about `axis`; the axis's frame is the target.
 
@@ -370,8 +327,45 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
 
         Returns:
             The entry.
+
+        Raises:
+            IndexError: A row or column outside 1 to 3.
         """
+        if row not in _INDICES or column not in _INDICES:
+            message = f"rotation entries are counted from 1 to 3, not ({row}, {column})"
+            raise IndexError(message)
         return self._matrix.entry(row, column)
+
+    def _kind(self) -> str:
+        return f"Rotation[{self._target.__name__}, {self._source.__name__}]"
+
+    def homogeneous(
+        self, translation: Position[Target] | None = None
+    ) -> Transform[Target, Source]:
+        """The homogeneous matrix [R p; 0 1] of this rotation: the transform ^A T_B.
+
+        Args:
+            translation: The origin of B as a position in A, whose position vector is
+                the fourth column; the origin of A when omitted.
+
+        Returns:
+            The transform between the same frames.
+
+        Raises:
+            TypeError: The translation is not a position (a displacement has no
+                place).
+        """
+        if translation is None:
+            return Transform(_Parts(self, self._target.origin()))
+        if not isinstance(translation, Position):
+            message = f"the translation is a position, not {translation!r}"
+            raise TypeError(message)
+        self._same_frame(
+            f"translate {self._kind()} by {translation!r}",
+            self._target,
+            translation.frame,
+        )
+        return Transform(_Parts(self, translation))
 
     @overload
     def __matmul__[Inner: Frame](
@@ -379,24 +373,32 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
     ) -> Rotation[Target, Inner]: ...
 
     @overload
-    def __matmul__(self, other: Vector[Source]) -> Vector[Target]: ...
+    def __matmul__(self, other: Displacement[Source]) -> Displacement[Target]: ...
 
     def __matmul__[Inner: Frame](
-        self, other: Rotation[Source, Inner] | Vector[Source]
-    ) -> Rotation[Target, Inner] | Vector[Target]:
-        """Compose with ^B R_C, or resolve in A a vector given in B.
+        self, other: Rotation[Source, Inner] | Displacement[Source]
+    ) -> Rotation[Target, Inner] | Displacement[Target]:
+        """Compose with ^B R_C, or resolve in A a displacement given in B.
 
         Returns:
-            ^A R_C for a rotation; ^A v = ^A R_B ^B v for a vector.
+            ^A R_C for a rotation; ^A v = ^A R_B ^B v for a displacement.
         """
         match other:
             case Rotation():
+                self._same_frame(
+                    f"compose {self._kind()} with {other._kind()}",
+                    self._source,
+                    other.target,
+                )
                 return self._of_matrix(
                     self._target, other.source, self._matrix @ other._matrix
                 )
-            case Vector():
+            case Displacement():
+                self._same_frame(
+                    f"apply {self._kind()} to {other!r}", self._source, other.frame
+                )
                 x, y, z = self._matrix.column_product(other.x, other.y, other.z)
-                return self._target.vector(x, y, z)
+                return self._target.displacement(x, y, z)
             case _:
                 return NotImplemented
 
@@ -409,60 +411,63 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         return self._of_matrix(self._source, self._target, self._matrix.transpose())
 
     def to_axis_angle(
-        self, tolerance: float = 1e-9, free_axis: UnitVector[Target] | None = None
+        self, free_axis: Direction[Target] | None = None
     ) -> AxisAngleSolutions[Target]:
         """The two axis-angle solutions, symbolic, following the course convention.
 
+        A rotation whose simplified entries contain no symbol is resolved exactly:
+        identity, half turn or regular case. A rotation with a symbol gets the regular
+        formulas, whatever values the symbols will take; if its skew part is
+        identically zero (a half turn about a symbolic axis), normalizing it raises
+        `ZeroVectorError`.
+
         Args:
-            tolerance: The margin of the validity flag when compiled.
             free_axis: The axis reported for the identity; z of A when omitted.
 
         Returns:
-            Both solutions and where they are valid. For a symbolic rotation the
-            regular-case formulas, valid where sin(theta) is not zero.
+            Both solutions.
 
         Raises:
-            ValueError: The skew part simplifies to zero but the trace proves neither
-                the identity nor a half turn.
+            ValueError: An exact rotation whose skew part is zero but whose trace
+                proves neither the identity nor a half turn.
         """
-        skew = self._target.vector(
-            self.entry(3, 2) - self.entry(2, 3),
-            self.entry(1, 3) - self.entry(3, 1),
-            self.entry(2, 1) - self.entry(1, 2),
+        rotation = self.simplify()
+        skew = self._target.displacement(
+            rotation.entry(3, 2) - rotation.entry(2, 3),
+            rotation.entry(1, 3) - rotation.entry(3, 1),
+            rotation.entry(2, 1) - rotation.entry(1, 2),
         )
-        cosine = (self.entry(1, 1) + self.entry(2, 2) + self.entry(3, 3) - 1) / 2
+        cosine = (
+            rotation.entry(1, 1) + rotation.entry(2, 2) + rotation.entry(3, 3) - 1
+        ) / 2
         length = skew.norm().simplify()
-        if not length.is_zero():
-            sine = length / 2
-            first = AxisAngle(skew.normalize(), sine.atan2(cosine))
-            return AxisAngleSolutions(
-                first,
-                AxisAngle(-first.axis, -first.angle),
-                ValidityCondition(sine, tolerance),
+        symbolic = any(
+            _has_symbols(rotation.entry(row, column))
+            for row in _INDICES
+            for column in _INDICES
+        )
+        if symbolic or not _is_zero(length):
+            first = AxisAngle(skew.normalize(), (length / 2).atan2(cosine))
+            return AxisAngleSolutions(first, AxisAngle(-first.axis, -first.angle))
+        if _is_zero(cosine - 1):
+            axis = FreeAxis(
+                self._target.displacement(0, 0, 1) if free_axis is None else free_axis
             )
-        if (cosine - 1).is_zero():
-            axis = FreeAxis(free_axis or self._target.vector(0, 0, 1))
             return AxisAngleSolutions(
-                AxisAngle(axis, Scalar(0)),
-                AxisAngle(-axis, Scalar(0)),
-                ValidityCondition(Scalar(1), tolerance),
+                AxisAngle(axis, Scalar(0)), AxisAngle(-axis, Scalar(0))
             )
-        if (cosine + 1).is_zero():
+        if _is_zero(cosine + 1):
             column = next(
                 index
                 for index in _INDICES
-                if not (self.entry(index, index) + 1).is_zero()
+                if not _is_zero(rotation.entry(index, index) + 1)
             )
             x, y, z = (
-                self.entry(row, column) + _IDENTITY.entry(row, column)
+                rotation.entry(row, column) + _IDENTITY.entry(row, column)
                 for row in _INDICES
             )
-            first = AxisAngle(self._target.vector(x, y, z).normalize(), Scalar.pi())
-            return AxisAngleSolutions(
-                first,
-                AxisAngle(-first.axis, first.angle),
-                ValidityCondition(self.entry(column, column) + 1, tolerance),
-            )
+            first = AxisAngle(self._target.direction(x, y, z), Scalar.pi())
+            return AxisAngleSolutions(first, AxisAngle(-first.axis, first.angle))
         message = "cannot decide between the identity and a half turn"
         raise ValueError(message)
 

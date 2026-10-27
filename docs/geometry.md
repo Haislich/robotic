@@ -1,4 +1,4 @@
-# Frames, points and vectors
+# Frames, positions and displacements
 
 ## Frames are types
 
@@ -17,117 +17,135 @@ keyword, because the exam numbers its frames (^0, ^3') and a class cannot be cal
 
 ```
 
-A frame gives a point its origin and axes, and a vector its axes only:
+A frame gives two kinds of three numbers. A **position** is where something is,
+measured from the frame's origin: a point, or its position vector. A **displacement**
+is how much and which way to move, read on the frame's axes, from nowhere in
+particular: a free vector.
 
 ```python
->>> Hand.point(1, 2, 0)
-Point[Hand](1, 2, 0)
->>> Hand.vector(1, 2, 0)
-Vector[Hand](1, 2, 0)
+>>> Hand.position(1, 2, 0)
+Position[Hand](1, 2, 0)
+>>> Hand.displacement(1, 2, 0)
+Displacement[Hand](1, 2, 0)
 >>> Hand.origin()
-Point[Hand](0, 0, 0)
+Position[Hand](0, 0, 0)
 
 ```
 
-The frame is part of the type: `Hand.vector(1, 0, 0)` is a `Vector[Hand]`, and adding
-it to a `Vector[Base]` is a type error before anything runs.
+`Point` is another name for `Position`, the same class.
 
-## Why a point is not a vector
+The frame is part of the type: `Hand.displacement(1, 0, 0)` is a `Displacement[Hand]`,
+and adding it to a `Displacement[Base]` is a type error before anything runs. If the
+type checker is ignored, the frames stored in the values raise at the operation:
+
+```python
+>>> Hand.displacement(1, 0, 0) + Base.displacement(1, 0, 0)
+Traceback (most recent call last):
+...
+robotic.geometry.FrameMismatchError: cannot add Displacement[Hand] and Displacement[Base]: frame Base where Hand is expected
+
+```
+
+## Why a position is not a displacement
 
 Take two fingertips of a hand whose frame has the same orientation as `Base` and its
 origin 5 along x. In `Hand` the fingertips are a = (1, 2, 0) and b = (3, 2, 0); in
-`Base` every coordinate of a point moves by 5 along x.
+`Base` every coordinate of a position moves by 5 along x.
 
 ```python
->>> a, b = Hand.point(1, 2, 0), Hand.point(3, 2, 0)
->>> a_base, b_base = Base.point(6, 2, 0), Base.point(8, 2, 0)
+>>> a, b = Hand.position(1, 2, 0), Hand.position(3, 2, 0)
+>>> a_base, b_base = Base.position(6, 2, 0), Base.position(8, 2, 0)
 
 ```
 
-The vector from a to b is the same arrow in both frames, because the translation
+The displacement from a to b is the same in both frames, because the translation
 cancels:
 
 ```python
 >>> b - a
-Vector[Hand](2, 0, 0)
+Displacement[Hand](2, 0, 0)
 >>> b_base - a_base
-Vector[Base](2, 0, 0)
+Displacement[Base](2, 0, 0)
 
 ```
 
-A sum of points would depend on where the origin is: (1 + 3) = 4 in `Hand`, but
-(6 + 8) = 14 in `Base`, not 4 + 5. No frame-independent point is "a + b", so `a + b`,
-`2 * a` and `-a` are type errors. Moving a point by a vector, or taking the vector
-between two points, is fine:
+A sum of positions would depend on where the origin is: (1 + 3) = 4 in `Hand`, but
+(6 + 8) = 14 in `Base`, not 4 + 5. No frame-independent position is "a + b", so
+`a + b`, `2 * a` and `-a` are type errors. Moving a position by a displacement, or
+taking the displacement between two positions, is fine:
 
 ```python
 >>> a + (b - a) / 2
-Point[Hand](2, 2, 0)
+Position[Hand](2, 2, 0)
 >>> a - Hand.origin()
-Vector[Hand](1, 2, 0)
+Displacement[Hand](1, 2, 0)
 
 ```
 
-The second line is how coordinates become a vector: explicitly, as the grounded vector
-from the origin.
+The second line is how a position's coordinates become a displacement: explicitly,
+as the displacement from the origin.
 
 ## The homogeneous w
 
-The rule is the bookkeeping of the homogeneous coordinate: a point is [p; 1], a
-vector [v; 0], and a result is meaningful only when its w is 0 or 1.
+The rule is the bookkeeping of the homogeneous coordinate: a position is [p; 1], a
+displacement [v; 0], and a result is meaningful only when its w is 0 or 1.
 
 | Operation | w | Result |
 |---|---|---|
-| point − point | 1 − 1 = 0 | vector |
-| point ± vector | 1 ± 0 = 1 | point |
-| vector ± vector | 0 ± 0 = 0 | vector |
-| k · vector | k · 0 = 0 | vector |
-| point + point | 1 + 1 = 2 | type error |
-| k · point | k · 1 = k | type error |
+| position − position | 1 − 1 = 0 | displacement |
+| position ± displacement | 1 ± 0 = 1 | position |
+| displacement ± displacement | 0 ± 0 = 0 | displacement |
+| k · displacement | k · 0 = 0 | displacement |
+| position + position | 1 + 1 = 2 | type error |
+| k · position | k · 1 = k | type error |
 
-## Vector algebra
+## Displacement algebra
 
-Dot and cross products need both vectors in the same frame. The norm is a scalar:
+Dot and cross products need both displacements in the same frame. The norm is a
+scalar:
 
 ```python
->>> x, y = Hand.vector(1, 0, 0), Hand.vector(0, 1, 0)
+>>> x, y = Hand.displacement(1, 0, 0), Hand.displacement(0, 1, 0)
 >>> x.cross(y)
-Vector[Hand](0, 0, 1)
->>> Hand.vector(1, 2, 3).dot(Hand.vector(4, 5, 6))
+Displacement[Hand](0, 0, 1)
+>>> Hand.displacement(1, 2, 3).dot(Hand.displacement(4, 5, 6))
 32
->>> Hand.vector(3, 4, 0).norm()
+>>> Hand.displacement(3, 4, 0).norm()
 5
 
 ```
 
-A unit vector is only ever the normalization of a vector: building one divides the
-components by their simplified norm, so no square root is left where none is needed.
+## Directions
+
+A direction is a displacement of length one. It is always a normalization: written
+from components, `Hand.direction(x, y, z)` divides them by their norm; computed,
+`d.normalize()` does the same. No square root is left where none is needed.
 
 ```python
->>> Hand.vector(3, 4, 0).normalize()
-UnitVector[Hand](3/5, 4/5, 0)
+>>> Hand.direction(3, 4, 0)
+Direction[Hand](3/5, 4/5, 0)
 >>> q = Scalar.symbol("q")
->>> Hand.vector(q.cos(), q.sin(), 0).normalize()
-UnitVector[Hand](cos(q), sin(q), 0)
+>>> Hand.displacement(q.cos(), q.sin(), 0).normalize()
+Direction[Hand](cos(q), sin(q), 0)
 
 ```
 
-The zero vector has no direction, so normalizing it raises:
+The zero displacement has no direction, so normalizing it raises:
 
 ```python
->>> Hand.vector(0, 0, 0).normalize()
+>>> Hand.direction(0, 0, 0)
 Traceback (most recent call last):
 ...
-robotic.geometry.ZeroVectorError: cannot normalize the zero vector Vector[Hand](0, 0, 0)
+robotic.geometry.ZeroVectorError: cannot normalize the zero vector Displacement[Hand](0, 0, 0)
 
 ```
 
 ## LaTeX
 
-Points and vectors render as columns with the frame as left superscript:
+Positions and displacements render as columns with the frame as left superscript:
 
 ```python
->>> print(Base.vector(q, 0, 1).latex())
+>>> print(Base.displacement(q, 0, 1).latex())
 {}^{0}\begin{bmatrix} q \\ 0 \\ 1 \end{bmatrix}
 
 ```

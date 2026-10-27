@@ -18,8 +18,8 @@ creations of `q2` add up to `2*q2`, not to `q2 + q2` with two different variable
 
 ```
 
-Symbols are real. Arithmetic takes a scalar, an `int` or a `float` on either side and
-always gives a scalar:
+Symbols are real. Arithmetic takes a scalar or an `int` on either side and always
+gives a scalar:
 
 ```python
 >>> 2 * q1 - q2 / 3
@@ -65,31 +65,23 @@ atan2(sin(q1), cos(q1))
 
 ```
 
-## The float policy
+## Exact numbers only
 
-A float is accepted wherever a number is, and it enters the expression as written: a
-floating-point constant, never converted to a fraction. Writing `0.1` means not caring
-about exactness.
-
-```python
->>> q1 + 0.1
-q1 + 0.1
-
-```
-
-The price is visible in symbolic results. The entry r₁₁ of Rz(q) Rz(π/2) is
-cos q cos(π/2) − sin q sin(π/2). With the float `math.pi / 2`, cos(π/2) is not zero
-but the rounding error `6.12323399573677e-17`, and simplification keeps it:
+A symbolic value takes exact numbers only: integers, exact constants and symbols. A
+float is a number near the value meant, not the value: `math.pi` is not π. It is a type
+error, and it raises when executed:
 
 ```python
 >>> import math
->>> half_turn = Scalar(math.pi / 2)
->>> (q1.cos() * half_turn.cos() - q1.sin() * half_turn.sin()).simplify()
--1.0*sin(q1) + 6.12323399573677e-17*cos(q1)
+>>> Scalar(math.pi)
+Traceback (most recent call last):
+...
+TypeError: a symbolic scalar takes an exact number, an int or a Scalar, not float 3.141592653589793; write Scalar(3) / 10 for 0.3 and Scalar.pi() for pi
 
 ```
 
-With the exact constant the same entry is exactly −sin q:
+So results print as the mathematics is written. The entry r₁₁ of Rz(q) Rz(π/2) is
+cos q cos(π/2) − sin q sin(π/2), exactly −sin q:
 
 ```python
 >>> half_turn = Scalar.pi() / 2
@@ -97,3 +89,23 @@ With the exact constant the same entry is exactly −sin q:
 -sin(q1)
 
 ```
+
+Floats belong to the numeric side: the values a compiled function takes, and the
+numbers it returns (see `compilation.md`).
+
+## No equality
+
+Whether two symbolic expressions are equal on the whole domain cannot be known in
+general, so a scalar has no `==`, no hash and no truth value: each raises instead of
+answering by accident.
+
+```python
+>>> q1 == q1
+Traceback (most recent call last):
+...
+TypeError: symbolic values have no equality: whether two of them are equal on the whole domain cannot be known; compile them and compare the numbers at a configuration
+
+```
+
+To compare, simplify and read the result, or compile both and compare the numbers at
+a configuration.

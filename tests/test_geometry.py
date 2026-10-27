@@ -4,7 +4,16 @@ from typing import assert_type
 
 import pytest
 
-from robotic import Frame, FreeAxis, Point, Scalar, UnitVector, Vector, ZeroVectorError
+from robotic import (
+    Direction,
+    Displacement,
+    Frame,
+    FreeAxis,
+    Point,
+    Position,
+    Scalar,
+    ZeroVectorError,
+)
 
 
 class Base(Frame, notation="0"):
@@ -20,116 +29,137 @@ l2 = Scalar.symbol("l2")
 
 
 def test_declaring_a_frame() -> None:
-    assert_type(Tool.vector(1, 0, 0), Vector[Tool])
+    assert_type(Tool.displacement(1, 0, 0), Displacement[Tool])
 
 
-def test_point_vector_and_origin() -> None:
-    assert_type(Tool.point(1, 2, 3), Point[Tool])
-    assert_type(Tool.vector(1, 2, 3), Vector[Tool])
-    assert_type(Tool.origin(), Point[Tool])
-    assert repr(Tool.origin()) == "Point[Tool](0, 0, 0)"
+def test_position_displacement_and_origin() -> None:
+    assert_type(Tool.position(1, 2, 3), Position[Tool])
+    assert_type(Tool.displacement(1, 2, 3), Displacement[Tool])
+    assert_type(Tool.origin(), Position[Tool])
+    assert repr(Tool.origin()) == "Position[Tool](0, 0, 0)"
+
+
+def test_point_is_a_position() -> None:
+    tip: Point[Tool] = Tool.position(1, 0, 0)
+    assert Point is Position
+    assert isinstance(tip, Point)
+    match tip:
+        case Point():
+            matched = True
+    assert matched
 
 
 def test_reading_components_and_frame() -> None:
-    tip = Tool.point(l2, 0, 0)
+    tip = Tool.position(l2, 0, 0)
     assert_type(tip.x, Scalar)
     assert str(tip.x) == "l2"
     assert tip.frame is Tool
 
 
-def test_coordinates_as_a_vector() -> None:
-    tip = Tool.point(l2, 1, 2)
+def test_coordinates_as_a_displacement() -> None:
+    tip = Tool.position(l2, 1, 2)
     coordinates = tip - Tool.origin()
-    assert_type(coordinates, Vector[Tool])
-    assert repr(coordinates) == "Vector[Tool](l2, 1, 2)"
+    assert_type(coordinates, Displacement[Tool])
+    assert repr(coordinates) == "Displacement[Tool](l2, 1, 2)"
 
 
-def test_displacing_a_point() -> None:
-    displaced = Tool.point(1, 0, 0) + Tool.vector(0, q, 0)
-    assert_type(displaced, Point[Tool])
-    assert repr(displaced) == "Point[Tool](1, q, 0)"
-    assert_type(displaced - Tool.vector(0, q, 0), Point[Tool])
+def test_moving_a_position() -> None:
+    moved = Tool.position(1, 0, 0) + Tool.displacement(0, q, 0)
+    assert_type(moved, Position[Tool])
+    assert repr(moved) == "Position[Tool](1, q, 0)"
+    assert_type(moved - Tool.displacement(0, q, 0), Position[Tool])
 
 
-def test_vector_arithmetic() -> None:
-    approach = Tool.vector(1, 2, 3)
-    assert repr(approach + approach - approach) == "Vector[Tool](1, 2, 3)"
-    assert repr(-approach) == "Vector[Tool](-1, -2, -3)"
-    assert repr(2 * approach / 4) == "Vector[Tool](1/2, 1, 3/2)"
-    assert repr(approach * q) == "Vector[Tool](q, 2*q, 3*q)"
+def test_displacement_arithmetic() -> None:
+    approach = Tool.displacement(1, 2, 3)
+    assert repr(approach + approach - approach) == "Displacement[Tool](1, 2, 3)"
+    assert repr(-approach) == "Displacement[Tool](-1, -2, -3)"
+    assert repr(2 * approach / 4) == "Displacement[Tool](1/2, 1, 3/2)"
+    assert repr(approach * q) == "Displacement[Tool](q, 2*q, 3*q)"
 
 
 def test_cross_product_of_axes() -> None:
-    z = Tool.vector(1, 0, 0).cross(Tool.vector(0, 1, 0))
-    assert_type(z, Vector[Tool])
-    assert repr(z) == "Vector[Tool](0, 0, 1)"
+    z = Tool.displacement(1, 0, 0).cross(Tool.displacement(0, 1, 0))
+    assert_type(z, Displacement[Tool])
+    assert repr(z) == "Displacement[Tool](0, 0, 1)"
 
 
 def test_dot_and_norm() -> None:
-    assert str(Tool.vector(1, 2, 3).dot(Tool.vector(4, 5, 6))) == "32"
-    assert str(Tool.vector(3, 4, 0).norm()) == "5"
+    assert str(Tool.displacement(1, 2, 3).dot(Tool.displacement(4, 5, 6))) == "32"
+    assert str(Tool.displacement(3, 4, 0).norm()) == "5"
 
 
-def test_building_a_unit_vector_normalizes() -> None:
-    unit = Tool.vector(3, 4, 0).normalize()
-    assert_type(unit, UnitVector[Tool])
-    assert repr(unit) == "UnitVector[Tool](3/5, 4/5, 0)"
+def test_normalizing_gives_a_direction() -> None:
+    unit = Tool.displacement(3, 4, 0).normalize()
+    assert_type(unit, Direction[Tool])
+    assert repr(unit) == "Direction[Tool](3/5, 4/5, 0)"
     assert (
-        repr(Tool.vector(1, 1, 0).normalize())
-        == "UnitVector[Tool](sqrt(2)/2, sqrt(2)/2, 0)"
+        repr(Tool.displacement(1, 1, 0).normalize())
+        == "Direction[Tool](sqrt(2)/2, sqrt(2)/2, 0)"
     )
+
+
+def test_a_direction_from_components_normalizes() -> None:
+    assert_type(Tool.direction(0, 0, 1), Direction[Tool])
+    assert repr(Tool.direction(0, 0, 1)) == "Direction[Tool](0, 0, 1)"
+    assert repr(Tool.direction(1, 1, 0)) == "Direction[Tool](sqrt(2)/2, sqrt(2)/2, 0)"
+    with pytest.raises(ZeroVectorError):
+        Tool.direction(0, 0, 0)
 
 
 def test_symbolic_factor_on_the_left() -> None:
     l1 = Scalar.symbol("l1")
-    x_axis = Tool.vector(1, 0, 0)
-    assert_type(l1 * x_axis, Vector[Tool])
-    assert repr(l1 * x_axis) == "Vector[Tool](l1, 0, 0)"
-    assert repr(x_axis * l1) == "Vector[Tool](l1, 0, 0)"
+    x_axis = Tool.displacement(1, 0, 0)
+    assert_type(l1 * x_axis, Displacement[Tool])
+    assert repr(l1 * x_axis) == "Displacement[Tool](l1, 0, 0)"
+    assert repr(x_axis * l1) == "Displacement[Tool](l1, 0, 0)"
 
 
-def test_negating_a_unit_vector_keeps_it_unit() -> None:
-    unit = Tool.vector(3, 4, 0).normalize()
-    assert_type(-unit, UnitVector[Tool])
-    assert repr(-unit) == "UnitVector[Tool](-3/5, -4/5, 0)"
-    assert repr(-FreeAxis(Tool.vector(0, 0, 1))) == "FreeAxis[Tool](0, 0, -1)"
+def test_negating_a_direction_keeps_it_unit() -> None:
+    unit = Tool.displacement(3, 4, 0).normalize()
+    assert_type(-unit, Direction[Tool])
+    assert repr(-unit) == "Direction[Tool](-3/5, -4/5, 0)"
+    assert repr(-FreeAxis(Tool.displacement(0, 0, 1))) == "FreeAxis[Tool](0, 0, -1)"
 
 
 def test_simplified_norm() -> None:
-    unit = Tool.vector(q.cos(), q.sin(), 0).normalize()
-    assert repr(unit) == "UnitVector[Tool](cos(q), sin(q), 0)"
+    unit = Tool.displacement(q.cos(), q.sin(), 0).normalize()
+    assert repr(unit) == "Direction[Tool](cos(q), sin(q), 0)"
 
 
 def test_zero_vector_raises() -> None:
     with pytest.raises(ZeroVectorError):
-        Tool.vector(0, 0, 0).normalize()
+        Tool.displacement(0, 0, 0).normalize()
     with pytest.raises(ZeroVectorError):
-        Tool.vector(q.cos() ** 2 + q.sin() ** 2 - 1, 0, 0).normalize()
+        Tool.displacement(q.cos() ** 2 + q.sin() ** 2 - 1, 0, 0).normalize()
 
 
-def test_free_axis_is_a_unit_vector() -> None:
-    axis = FreeAxis(Base.vector(0, 0, 2))
-    assert isinstance(axis, UnitVector)
+def test_free_axis_is_a_direction() -> None:
+    axis = FreeAxis(Base.displacement(0, 0, 2))
+    assert isinstance(axis, Direction)
     assert repr(axis) == "FreeAxis[Base](0, 0, 1)"
 
 
 def test_simplify_keeps_the_frame() -> None:
-    simplified = Base.vector(q.cos() ** 2 + q.sin() ** 2, 0, 0).simplify()
-    assert_type(simplified, Vector[Base])
-    assert repr(simplified) == "Vector[Base](1, 0, 0)"
-    assert_type(Base.point(q, 0, 0).simplify(), Point[Base])
-    assert_type(Base.vector(1, 0, 0).normalize().simplify(), UnitVector[Base])
-    assert repr(FreeAxis(Base.vector(0, 0, 1)).simplify()) == "FreeAxis[Base](0, 0, 1)"
+    simplified = Base.displacement(q.cos() ** 2 + q.sin() ** 2, 0, 0).simplify()
+    assert_type(simplified, Displacement[Base])
+    assert repr(simplified) == "Displacement[Base](1, 0, 0)"
+    assert_type(Base.position(q, 0, 0).simplify(), Position[Base])
+    assert_type(Base.direction(1, 0, 0).simplify(), Direction[Base])
+    assert (
+        repr(FreeAxis(Base.displacement(0, 0, 1)).simplify())
+        == "FreeAxis[Base](0, 0, 1)"
+    )
 
 
 def test_default_name() -> None:
     assert Tool.notation == "Tool"
-    assert "{}^{Tool}" in Tool.vector(1, 0, 0).latex()
+    assert "{}^{Tool}" in Tool.displacement(1, 0, 0).latex()
 
 
 def test_declared_notation() -> None:
     assert Base.notation == "0"
-    assert Base.vector(q, 0, 0).latex() == (
+    assert Base.displacement(q, 0, 0).latex() == (
         r"{}^{0}\begin{bmatrix} q \\ 0 \\ 0 \end{bmatrix}"
     )
 

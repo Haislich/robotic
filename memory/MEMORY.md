@@ -9,4 +9,4 @@
 - [Apply runs autonomously](apply-runs-autonomously.md) — origin of CLAUDE.md Roles: decide small reversible things during apply
 - [JAX decisions are delegated](jax-decisions-delegated.md) — origin of CLAUDE.md Roles: implementation choices are Claude's, with context
 - [Memory always current](memory-always-current.md) — update memory/ and the handoff as things change; user switches PCs
-- [stratchpad/ is the user's](stratchpad-is-users.md) — user's spot-probe folder; excluded from checks; never edit it
+- [stratchpad/ is the user's](stratchpad-is-users.md) — user's spot-probe folder; never edit it; its ruff/ty findings are the user's

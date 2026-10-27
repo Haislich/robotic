@@ -1,10 +1,13 @@
-"""Homogeneous transformations between frames, ^A T_B."""
+"""Homogeneous transformations between frames, ^A T_B: elements of SE(3)."""
 
-from typing import Final, Literal, final, overload, override
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Final, Literal, final, overload, override
 
-from robotic.geometry import Frame, Point, Vector
-from robotic.rotation import Rotation
+from robotic.geometry import Displacement, Frame, Position
 from robotic.symbolic import Layout, Scalar, Symbolic
+
+if TYPE_CHECKING:
+    from robotic.rotation import Rotation
 
 type Index4 = Literal[1, 2, 3, 4]
 
@@ -12,37 +15,45 @@ _INDICES: tuple[Index4, ...] = (1, 2, 3, 4)
 _HOMOGENEOUS: Final = 4
 
 
+@dataclass(frozen=True, eq=False)
+class _Parts[Target: Frame, Source: Frame]:
+    """A rotation and its translation, checked by `Rotation.homogeneous`."""
+
+    rotation: Rotation[Target, Source]
+    translation: Position[Target]
+
+
 @final
 class Transform[Target: Frame, Source: Frame](Symbolic):
-    """The transform ^A T_B: maps points expressed in the source B to the target A.
+    """The transform ^A T_B = [R p; 0 1]: maps positions in B to the target A.
 
-    It is the rotation ^A R_B and the translation ^A p, the origin of B expressed in
-    A; on a point it is R p + t, on a vector R v.
+    It is the rotation ^A R_B and the translation, the origin of B as a position in A,
+    vector p is the fourth column. On a position it is R p + t, on a displacement
+    R v. Built only as `rotation.homogeneous(translation)`.
     """
 
     __slots__ = ("_rotation", "_translation")
 
     _rotation: Rotation[Target, Source]
-    _translation: Vector[Target]
+    _translation: Position[Target]
 
-    def __init__(self, *, target: type[Target], source: type[Source]) -> None:
-        """The identity transform from `source` to `target`.
+    def __init__(self, parts: _Parts[Target, Source]) -> None:
+        """Assemble the parts given by `Rotation.homogeneous`, the only spelling.
 
         Args:
-            target: The frame A of ^A T_B.
-            source: The frame B of ^A T_B.
-        """
-        self._rotation = Rotation.identity(target=target, source=source)
-        self._translation = target.vector(0, 0, 0)
+            parts: The rotation and the translation, already checked.
 
-    @classmethod
-    def _of_parts[A: Frame, B: Frame](
-        cls, rotation: Rotation[A, B], translation: Vector[A]
-    ) -> Transform[A, B]:
-        transform: Transform[A, B] = object.__new__(Transform)
-        transform._rotation = rotation
-        transform._translation = translation
-        return transform
+        Raises:
+            TypeError: Called with anything but the parts `homogeneous` builds.
+        """
+        if not isinstance(parts, _Parts):
+            message = (
+                "a transform is the homogeneous matrix of a rotation: write "
+                "rotation.homogeneous(translation)"
+            )
+            raise TypeError(message)
+        self._rotation = parts.rotation
+        self._translation = parts.translation
 
     @property
     def rotation(self) -> Rotation[Target, Source]:
@@ -50,40 +61,25 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         return self._rotation
 
     @property
-    def translation(self) -> Vector[Target]:
-        """The translation ^A p: the origin of B expressed in A."""
+    def translation(self) -> Position[Target]:
+        """The translation: the origin of B as a position in A."""
         return self._translation
-
-    def with_rotation(
-        self, rotation: Rotation[Target, Source]
-    ) -> Transform[Target, Source]:
-        """The same frames and translation, with this rotation.
-
-        Returns:
-            A new transform; this one is unchanged.
-        """
-        return self._of_parts(rotation, self._translation)
-
-    def with_translation(
-        self, translation: Vector[Target]
-    ) -> Transform[Target, Source]:
-        """The same frames and rotation, with this translation.
-
-        Args:
-            translation: The origin of B expressed in A.
-
-        Returns:
-            A new transform; this one is unchanged.
-        """
-        return self._of_parts(self._rotation, translation)
 
     def entry(self, row: Index4, column: Index4) -> Scalar:
         """The entry of the 4x4 homogeneous matrix, counted from 1.
 
         Returns:
-            r_{row column} inside the rotation block, the translation in column 4,
-            and the row (0, 0, 0, 1) at the bottom.
+            r_{row column} inside the rotation block, the translation's position vector
+            in column 4, and the row (0, 0, 0, 1) at the bottom.
+
+        Raises:
+            IndexError: A row or column outside 1 to 4.
         """
+        if row not in _INDICES or column not in _INDICES:
+            message = (
+                f"transform entries are counted from 1 to 4, not ({row}, {column})"
+            )
+            raise IndexError(message)
         if row == _HOMOGENEOUS:
             return Scalar(1 if column == _HOMOGENEOUS else 0)
         if column == _HOMOGENEOUS:
@@ -91,52 +87,53 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
             return (translation.x, translation.y, translation.z)[row - 1]
         return self._rotation.entry(row, column)
 
+    def _kind(self) -> str:
+        rotation = self._rotation
+        return f"Transform[{rotation.target.__name__}, {rotation.source.__name__}]"
+
     @overload
     def __matmul__[Inner: Frame](
         self, other: Transform[Source, Inner]
     ) -> Transform[Target, Inner]: ...
 
     @overload
-    def __matmul__(self, other: Point[Source]) -> Point[Target]: ...
+    def __matmul__(self, other: Position[Source]) -> Position[Target]: ...
 
     @overload
-    def __matmul__(self, other: Vector[Source]) -> Vector[Target]: ...
+    def __matmul__(self, other: Displacement[Source]) -> Displacement[Target]: ...
 
     def __matmul__[Inner: Frame](
-        self, other: Transform[Source, Inner] | Point[Source] | Vector[Source]
-    ) -> Transform[Target, Inner] | Point[Target] | Vector[Target]:
-        """Compose with ^B T_C, or resolve in A a point or vector given in B.
+        self, other: Transform[Source, Inner] | Position[Source] | Displacement[Source]
+    ) -> Transform[Target, Inner] | Position[Target] | Displacement[Target]:
+        """Compose with ^B T_C, or resolve in A a position or displacement given in B.
 
         Returns:
-            ^A T_C = (R1 R2, t1 + R1 t2) for a transform; R p + t for a point; R v
-            for a vector.
+            ^A T_C = (R1 R2, origin of C resolved in A) for a transform; R p + t for
+            a position; R v for a displacement.
         """
         match other:
             case Transform():
-                return self._of_parts(
-                    self._rotation @ other.rotation,
-                    self._translation + self._rotation @ other.translation,
+                return Transform(
+                    _Parts(self._rotation @ other.rotation, self @ other.translation)
                 )
-            case Point():
-                origin = self._rotation.target.origin()
-                return (
-                    origin
-                    + self._translation
-                    + self._rotation @ (other - other.frame.origin())
+            case Position():
+                return self._translation + self._rotation @ (
+                    other - other.frame.origin()
                 )
-            case Vector():
+            case Displacement():
                 return self._rotation @ other
             case _:
                 return NotImplemented
 
     def inverse(self) -> Transform[Source, Target]:
-        """The inverse ^B T_A, with rotation R^T and translation -R^T t.
+        """The inverse ^B T_A: rotation R^T, translation the origin of A resolved in B.
 
         Returns:
             The transform with frames swapped.
         """
         inverse = self._rotation.inverse()
-        return self._of_parts(inverse, -(inverse @ self._translation))
+        back = inverse @ (self._rotation.target.origin() - self._translation)
+        return Transform(_Parts(inverse, inverse.target.origin() + back))
 
     @override
     def simplify(self) -> Transform[Target, Source]:
@@ -145,7 +142,9 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         Returns:
             The same transform, between the same frames, simplified.
         """
-        return self._of_parts(self._rotation.simplify(), self._translation.simplify())
+        return Transform(
+            _Parts(self._rotation.simplify(), self._translation.simplify())
+        )
 
     @override
     def latex(self) -> str:
@@ -163,10 +162,8 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
 
     @override
     def _layout(self) -> Layout:
-        rotation = self._rotation
-        frames = f"{rotation.target.__name__}, {rotation.source.__name__}"
         return Layout(
-            label=f"Transform[{frames}]",
+            label=self._kind(),
             entries=tuple(
                 self.entry(row, column) for row in _INDICES for column in _INDICES
             ),
@@ -178,6 +175,6 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         """Print the rotation and the translation.
 
         Returns:
-            E.g. `Transform(Rotation[Base, Link1](...), Vector[Base](0, 0, d1))`.
+            E.g. `Transform(Rotation[Base, Link1](...), Position[Base](0, 0, d1))`.
         """
         return f"Transform({self._rotation!r}, {self._translation!r})"

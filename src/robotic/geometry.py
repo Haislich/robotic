@@ -1,14 +1,17 @@
-"""Frames, and points and vectors resolved in a frame.
+"""Frames, and positions and displacements resolved in a frame.
 
-A frame is a type the user declares. A frame gives a point its origin and axes and a
-vector its axes only, so within one frame the affine rules hold: point - point is a
-vector, point +- vector is a point, vector +- vector is a vector, a number times a
-vector is a vector. Anything else, and any mix of frames, is a type error.
+A frame is a type the user declares. A position is where something is, measured from
+the frame's origin (a point); a displacement is how much and which way to move, read
+on the frame's axes only (a free vector). Within one frame the affine rules hold:
+position - position is a displacement, position +- displacement is a position,
+displacement +- displacement is a displacement, a number times a displacement is a
+displacement. Anything else, and any mix of frames, is a type error, and raises when
+executed.
 """
 
 from typing import ClassVar, Self, final, overload, override
 
-from robotic.symbolic import Layout, Scalar, ScalarLike, Symbolic
+from robotic.symbolic import Layout, Scalar, ScalarLike, Symbolic, _is_zero
 
 
 class Frame:
@@ -27,52 +30,92 @@ class Frame:
         Args:
             notation: The frame as the course writes it, e.g. `"0"` for ^0 or `"3'"`;
                 the class name when omitted.
+
+        Raises:
+            TypeError: The notation is not a string.
         """
         super().__init_subclass__()
+        if notation is not None and not isinstance(notation, str):
+            message = f"a frame's notation is a string, not {type(notation).__name__}"
+            raise TypeError(message)
         cls.notation = cls.__name__ if notation is None else notation
 
     @classmethod
-    def point(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Point[Self]:
-        """The point with these coordinates: the origin plus the axes scaled.
+    def position(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Position[Self]:
+        """The position with these coordinates, measured from the origin.
 
         Returns:
-            The point, resolved in this frame.
+            The position, resolved in this frame.
         """
-        return Point(x, y, z, cls)
+        return Position(x, y, z, cls)
 
     @classmethod
-    def vector(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Vector[Self]:
-        """The vector with these components along the axes.
+    def displacement(
+        cls, x: ScalarLike, y: ScalarLike, z: ScalarLike
+    ) -> Displacement[Self]:
+        """The displacement with these components along the axes.
 
         Returns:
-            The vector, resolved in this frame.
+            The displacement, resolved in this frame.
         """
-        return Vector(x, y, z, cls)
+        return Displacement(x, y, z, cls)
 
     @classmethod
-    def origin(cls) -> Point[Self]:
+    def direction(cls, x: ScalarLike, y: ScalarLike, z: ScalarLike) -> Direction[Self]:
+        """The direction of these components: the displacement normalized.
+
+        Returns:
+            The direction, resolved in this frame.
+        """
+        return Direction(Displacement(x, y, z, cls))
+
+    @classmethod
+    def origin(cls) -> Position[Self]:
         """The frame's origin.
 
         Returns:
-            The point (0, 0, 0), resolved in this frame.
+            The position (0, 0, 0), resolved in this frame.
         """
-        return Point(0, 0, 0, cls)
+        return Position(0, 0, 0, cls)
+
+
+class FrameMismatchError(TypeError):
+    """Two values of an operation are resolved in different frames.
+
+    The runtime image of the type error the type checker reports for the same line.
+    """
+
+    def __init__(
+        self, operation: str, expected: type[Frame], found: type[Frame]
+    ) -> None:
+        """Name the operation and both frames.
+
+        Args:
+            operation: The operation and its operands, e.g. `add Displacement[Tool]
+                and Displacement[Base]`.
+            expected: The frame the operation requires.
+            found: The frame it was given.
+        """
+        super().__init__(
+            f"cannot {operation}: frame {found.__name__} where "
+            f"{expected.__name__} is expected"
+        )
 
 
 class ZeroVectorError(ValueError):
-    """A vector whose components simplify to zero has no direction to normalize."""
+    """A displacement whose components simplify to zero has no direction."""
 
-    def __init__[F: Frame](self, vector: Vector[F]) -> None:
-        """Name the vector.
+    def __init__[F: Frame](self, displacement: Displacement[F]) -> None:
+        """Name the displacement.
 
         Args:
-            vector: The vector that was normalized.
+            displacement: The displacement that was normalized.
         """
-        super().__init__(f"cannot normalize the zero vector {vector!r}")
+        super().__init__(f"cannot normalize the zero vector {displacement!r}")
 
 
 class _Resolved[F: Frame](Symbolic):
-    """Three scalars read in the frame `F`: the storage shared by points and vectors."""
+    """Three scalars read in the frame `F`: storage of positions and displacements."""
 
     __slots__ = ("_frame", "_x", "_y", "_z")
 
@@ -86,7 +129,13 @@ class _Resolved[F: Frame](Symbolic):
             y: The number along the y axis of `frame`.
             z: The number along the z axis of `frame`.
             frame: The frame the numbers are read in.
+
+        Raises:
+            TypeError: `frame` is not a frame.
         """
+        if not (isinstance(frame, type) and issubclass(frame, Frame)):
+            message = f"expected a frame, a subclass of Frame, not {frame!r}"
+            raise TypeError(message)
         self._frame = frame
         self._x = Scalar(x)
         self._y = Scalar(y)
@@ -112,6 +161,14 @@ class _Resolved[F: Frame](Symbolic):
         """The number along the z axis."""
         return self._z
 
+    def _kind(self) -> str:
+        return f"{type(self).__name__}[{self._frame.__name__}]"
+
+    def _same_frame(self, verb: str, other: _Resolved[Frame]) -> None:
+        if other.frame is not self._frame:
+            operation = f"{verb} {self._kind()} and {other._kind()}"
+            raise FrameMismatchError(operation, self._frame, other.frame)
+
     @override
     def simplify(self) -> Self:
         """Simplify each number.
@@ -136,7 +193,7 @@ class _Resolved[F: Frame](Symbolic):
     @override
     def _layout(self) -> Layout:
         return Layout(
-            label=f"{type(self).__name__}[{self._frame.__name__}]",
+            label=self._kind(),
             entries=(self._x, self._y, self._z),
             shape=(3,),
         )
@@ -146,89 +203,114 @@ class _Resolved[F: Frame](Symbolic):
         """Print the kind, the frame and the numbers.
 
         Returns:
-            E.g. `Point[Tool](l2, 0, 0)`.
+            E.g. `Position[Tool](l2, 0, 0)`.
         """
-        numbers = f"{self._x}, {self._y}, {self._z}"
-        return f"{type(self).__name__}[{self._frame.__name__}]({numbers})"
+        return f"{self._kind()}({self._x}, {self._y}, {self._z})"
 
 
-class Vector[F: Frame](_Resolved[F]):
-    """An arrow resolved in the frame `F`: its components along the axes of `F`.
+class Displacement[F: Frame](_Resolved[F]):
+    """How much and which way to move, resolved on the axes of the frame `F`.
 
-    `frame.vector(x, y, z)` is the usual spelling of `Vector(x, y, z, frame)`.
+    A free vector: it has no anchor, so a change of frame rotates it and never
+    translates it. `frame.displacement(x, y, z)` is the usual spelling of
+    `Displacement(x, y, z, frame)`.
     """
 
     __slots__ = ()
 
-    def __add__(self, other: Vector[F]) -> Vector[F]:
-        """Add two vectors of the same frame.
+    def __add__(self, other: Displacement[F]) -> Displacement[F]:
+        """Add two displacements of the same frame.
 
         Returns:
             The sum, in the same frame.
         """
-        return Vector(
+        if not isinstance(other, Displacement):
+            return NotImplemented
+        self._same_frame("add", other)
+        return Displacement(
             self._x + other.x, self._y + other.y, self._z + other.z, self._frame
         )
 
-    def __sub__(self, other: Vector[F]) -> Vector[F]:
-        """Subtract two vectors of the same frame.
+    def __sub__(self, other: Displacement[F]) -> Displacement[F]:
+        """Subtract two displacements of the same frame.
 
         Returns:
             The difference, in the same frame.
         """
-        return Vector(
+        if not isinstance(other, Displacement):
+            return NotImplemented
+        self._same_frame("subtract", other)
+        return Displacement(
             self._x - other.x, self._y - other.y, self._z - other.z, self._frame
         )
 
-    def __neg__(self) -> Vector[F]:
-        """Reverse the arrow.
+    def __neg__(self) -> Displacement[F]:
+        """Reverse the displacement.
 
         Returns:
-            The opposite vector, in the same frame.
+            The opposite displacement, in the same frame.
         """
-        return Vector(-self._x, -self._y, -self._z, self._frame)
+        return Displacement(-self._x, -self._y, -self._z, self._frame)
 
-    def __mul__(self, factor: ScalarLike) -> Vector[F]:
+    def __mul__(self, factor: ScalarLike) -> Displacement[F]:
         """Scale by a number.
 
         Returns:
-            The scaled vector, in the same frame.
+            The scaled displacement, in the same frame.
         """
-        return Vector(self._x * factor, self._y * factor, self._z * factor, self._frame)
+        scale = Scalar(factor)
+        return Displacement(
+            self._x * scale, self._y * scale, self._z * scale, self._frame
+        )
 
-    def __rmul__(self, factor: Scalar | float) -> Vector[F]:
+    def __rmul__(self, factor: ScalarLike) -> Displacement[F]:
         """Scale by a number written on the left, as in `l1 * x_axis`.
 
         Returns:
-            The scaled vector, in the same frame.
+            The scaled displacement, in the same frame.
         """
         return self * factor
 
-    def __truediv__(self, divisor: ScalarLike) -> Vector[F]:
+    def __truediv__(self, divisor: ScalarLike) -> Displacement[F]:
         """Divide by a number.
 
         Returns:
-            The scaled vector, in the same frame.
+            The scaled displacement, in the same frame.
         """
-        return Vector(
-            self._x / divisor, self._y / divisor, self._z / divisor, self._frame
+        scale = Scalar(divisor)
+        return Displacement(
+            self._x / scale, self._y / scale, self._z / scale, self._frame
         )
 
-    def dot(self, other: Vector[F]) -> Scalar:
-        """Dot product with a vector of the same frame.
+    def dot(self, other: Displacement[F]) -> Scalar:
+        """Dot product with a displacement of the same frame.
 
         Returns:
             The scalar `self . other`.
+
+        Raises:
+            TypeError: `other` is not a displacement.
         """
+        if not isinstance(other, Displacement):
+            message = f"dot takes a displacement, not {type(other).__name__}"
+            raise TypeError(message)
+        self._same_frame("take the dot product of", other)
         return self._x * other.x + self._y * other.y + self._z * other.z
 
-    def cross(self, other: Vector[F]) -> Vector[F]:
-        """Cross product with a vector of the same frame.
+    def cross(self, other: Displacement[F]) -> Displacement[F]:
+        """Cross product with a displacement of the same frame.
 
         Returns:
             `self x other`, in the same frame.
+
+        Raises:
+            TypeError: `other` is not a displacement.
         """
-        return Vector(
+        if not isinstance(other, Displacement):
+            message = f"cross takes a displacement, not {type(other).__name__}"
+            raise TypeError(message)
+        self._same_frame("take the cross product of", other)
+        return Displacement(
             self._y * other.z - self._z * other.y,
             self._z * other.x - self._x * other.z,
             self._x * other.y - self._y * other.x,
@@ -243,37 +325,42 @@ class Vector[F: Frame](_Resolved[F]):
         """
         return self.dot(self).sqrt()
 
-    def normalize(self) -> UnitVector[F]:
-        """The unit vector with the same direction; `UnitVector(self)`.
+    def normalize(self) -> Direction[F]:
+        """The direction of this displacement; `Direction(self)`.
 
         Returns:
-            The unit vector, in the same frame.
+            The direction, in the same frame.
         """
-        return UnitVector(self)
+        return Direction(self)
 
 
-class UnitVector[F: Frame](Vector[F]):
-    """A vector of length one, obtained only by normalizing a vector."""
+class Direction[F: Frame](Displacement[F]):
+    """A displacement of length one, obtained only by normalizing."""
 
     __slots__ = ()
 
-    def __init__(self, direction: Vector[F]) -> None:
-        """Normalize a direction: divide its components by their simplified norm.
+    def __init__(self, displacement: Displacement[F]) -> None:
+        """Normalize: divide the components by their simplified norm.
 
         Args:
-            direction: Any vector with a direction, in the frame of the result.
+            displacement: Any displacement with a direction, in the frame of the
+                result.
 
         Raises:
+            TypeError: The argument is not a displacement.
             ZeroVectorError: The norm simplifies to zero.
         """
-        length = direction.norm().simplify()
-        if length.is_zero():
-            raise ZeroVectorError(direction)
+        if not isinstance(displacement, Displacement):
+            message = f"a direction normalizes a displacement, not {displacement!r}"
+            raise TypeError(message)
+        length = displacement.norm().simplify()
+        if _is_zero(length):
+            raise ZeroVectorError(displacement)
         super().__init__(
-            direction.x / length,
-            direction.y / length,
-            direction.z / length,
-            direction.frame,
+            displacement.x / length,
+            displacement.y / length,
+            displacement.z / length,
+            displacement.frame,
         )
 
     def _of_unit_components(self, x: Scalar, y: Scalar, z: Scalar) -> Self:
@@ -284,10 +371,10 @@ class UnitVector[F: Frame](Vector[F]):
 
     @override
     def __neg__(self) -> Self:
-        """Reverse the arrow; the length stays one, so nothing is normalized again.
+        """Reverse the direction; the length stays one, so nothing is normalized.
 
         Returns:
-            The opposite unit vector, in the same frame.
+            The opposite direction, in the same frame.
         """
         return self._of_unit_components(-self._x, -self._y, -self._z)
 
@@ -296,53 +383,66 @@ class UnitVector[F: Frame](Vector[F]):
         """Simplify each component; the length stays one, so nothing is normalized.
 
         Returns:
-            The same unit vector, in the same frame, with simplified components.
+            The same direction, in the same frame, with simplified components.
         """
         return self._of_unit_components(
             self._x.simplify(), self._y.simplify(), self._z.simplify()
         )
 
 
-class FreeAxis[F: Frame](UnitVector[F]):
-    """A unit vector chosen freely, since any axis is valid (the identity rotation)."""
+class FreeAxis[F: Frame](Direction[F]):
+    """A direction chosen freely, since any axis is valid (the identity rotation)."""
 
     __slots__ = ()
 
 
 @final
-class Point[F: Frame](_Resolved[F]):
-    """A point resolved in the frame `F`: its coordinates from the origin of `F`.
+class Position[F: Frame](_Resolved[F]):
+    """Where something is, measured from the origin of the frame `F` (a point).
 
-    `frame.point(x, y, z)` is the usual spelling of `Point(x, y, z, frame)`.
+    A position vector: a change of frame rotates it and moves it with the origin.
+    `frame.position(x, y, z)` is the usual spelling of `Position(x, y, z, frame)`.
     """
 
     __slots__ = ()
 
     @overload
-    def __sub__(self, other: Point[F]) -> Vector[F]: ...
+    def __sub__(self, other: Position[F]) -> Displacement[F]: ...
 
     @overload
-    def __sub__(self, other: Vector[F]) -> Point[F]: ...
+    def __sub__(self, other: Displacement[F]) -> Position[F]: ...
 
-    def __sub__(self, other: Point[F] | Vector[F]) -> Vector[F] | Point[F]:
-        """Subtract a point (giving the vector between them) or a vector (moving back).
+    def __sub__(
+        self, other: Position[F] | Displacement[F]
+    ) -> Displacement[F] | Position[F]:
+        """Subtract a position (the displacement between them) or a displacement.
 
         Returns:
-            `self - other`: a vector for a point, a point for a vector.
+            `self - other`: a displacement for a position, a position for a
+            displacement.
         """
+        if not isinstance(other, Position | Displacement):
+            return NotImplemented
+        self._same_frame("subtract", other)
         x, y, z = self._x - other.x, self._y - other.y, self._z - other.z
         match other:
-            case Point():
-                return Vector(x, y, z, self._frame)
-            case Vector():
-                return Point(x, y, z, self._frame)
+            case Position():
+                return Displacement(x, y, z, self._frame)
+            case Displacement():
+                return Position(x, y, z, self._frame)
 
-    def __add__(self, other: Vector[F]) -> Point[F]:
-        """Displace the point by a vector of the same frame.
+    def __add__(self, other: Displacement[F]) -> Position[F]:
+        """Move the position by a displacement of the same frame.
 
         Returns:
-            The displaced point, in the same frame.
+            The moved position, in the same frame.
         """
-        return Point(
+        if not isinstance(other, Displacement):
+            return NotImplemented
+        self._same_frame("add", other)
+        return Position(
             self._x + other.x, self._y + other.y, self._z + other.z, self._frame
         )
+
+
+Point = Position
