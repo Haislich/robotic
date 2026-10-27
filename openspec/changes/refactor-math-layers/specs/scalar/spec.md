@@ -7,7 +7,7 @@ Provides the typed scalar every other layer is built on: a symbolic expression w
 ## ADDED Requirements
 
 ### Requirement: Typed scalar arithmetic
-A scalar SHALL support addition, subtraction, multiplication, division, power and negation with another scalar, an `int` or a `float`, on either side, and every result SHALL be typed as a scalar.
+A scalar SHALL support addition, subtraction, multiplication, division, power and negation with another scalar or an `int`, on either side, and every result SHALL be typed as a scalar.
 
 #### Scenario: Mixed arithmetic stays typed
 - **WHEN** `q` is a symbol and the code computes `q + 1`, `1 + q`, `q * q`, `2 * q - 0.5` and `-q`
@@ -43,12 +43,22 @@ A scalar SHALL provide cosine, sine, tangent, two-argument arctangent, square ro
 - **WHEN** `q` is a symbol and the code calls its cosine method
 - **THEN** the result is a scalar printing as `cos(q)`
 
-### Requirement: Floats are accepted as written
-A float SHALL be accepted wherever a number is, and SHALL enter the expression as a floating-point constant without conversion to an exact fraction.
+### Requirement: The symbolic side takes exact numbers only
+A float SHALL be rejected wherever a symbolic value takes a number; exact values SHALL be written with integers and exact scalars.
 
 #### Scenario: Float inside an expression
 - **WHEN** `q` is a symbol and the code computes `q + 0.1`
-- **THEN** the result contains the floating-point constant `0.1` and the free symbol `q`
+- **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
+
+#### Scenario: Float angle
+- **WHEN** the code builds the rotation about z by `math.pi`
+- **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
+
+#### Scenario: Exact fraction
+- **WHEN** the code computes `q + Scalar(1) / 10`
+- **THEN** the result prints as `q + 1/10`
 
 ### Requirement: Simplification and LaTeX
 A scalar SHALL provide simplification returning a scalar and a LaTeX rendering returning a string.

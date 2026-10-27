@@ -6,35 +6,31 @@ Models homogeneous transformations between frames, written ^A T_B, so that forwa
 
 ## ADDED Requirements
 
-### Requirement: A transform is a rotation and a translation between two frames
-A transform ^A T_B SHALL carry both frames in its type, SHALL consist of the rotation ^A R_B and the translation ^A p (the origin of B expressed in A, a vector in A), and SHALL expose its rotation, its translation and the sixteen entries of its 4x4 homogeneous matrix as scalars.
+### Requirement: A transform is a rotation and a position between two frames
+A transform ^A T_B SHALL carry both frames in its type, SHALL be an element of SE(3) consisting of the rotation ^A R_B and the origin of B expressed in A (a point in A, whose position vector is the fourth column), and SHALL expose its rotation, its origin and the sixteen entries of its 4x4 homogeneous matrix as scalars.
 
 #### Scenario: Matrix layout
-- **WHEN** the code builds the transform from `Link1` to `Base` with rotation about z by `q1` and translation (0, 0, d1) in `Base`
+- **WHEN** the code builds the homogeneous matrix of the rotation about z by `q1` from `Link1` to `Base` with origin (0, 0, d1) in `Base`
 - **THEN** its entries are `[[cos(q1), -sin(q1), 0, 0], [sin(q1), cos(q1), 0, 0], [0, 0, 1, d1], [0, 0, 0, 1]]`
 
-#### Scenario: Reading the translation from the entries
-- **WHEN** the code reads row 3, column 4 of the transform with translation (0, 0, d1)
+#### Scenario: Reading the origin from the entries
+- **WHEN** the code reads row 3, column 4 of the transform with origin (0, 0, d1)
 - **THEN** the result is the scalar `d1`
 
-### Requirement: A transform is built from its frames
-Building a transform SHALL start from its target and source frames, giving the identity between them; setting its rotation or translation SHALL return a new transform with the same frames, and a rotation not from the source to the target, or a translation not in the target, SHALL be a type error, also when written inline.
+### Requirement: A transform is the homogeneous matrix of a rotation
+A transform SHALL be built only as the homogeneous matrix of a rotation, given the origin of the source as a point in the target; without an origin the origins SHALL coincide. A point not in the target, or a vector, given as the origin SHALL be a type error, also when written inline.
 
-#### Scenario: Identity between two frames
-- **WHEN** the code builds the transform from `Link1` to `Base` without setting any part
+#### Scenario: Coincident origins
+- **WHEN** the code takes the homogeneous matrix of the identity from `Link1` to `Base` without an origin
 - **THEN** the type checker infers a transform from `Link1` to `Base`, and its entries are those of the 4x4 identity
 
-#### Scenario: Setting a part returns a new transform
-- **WHEN** the code sets the translation of a transform `t` and binds the result to `u`
-- **THEN** `t` is unchanged and `u` has the new translation and the same frames
-
-#### Scenario: Rotation in the wrong frames, inline
-- **WHEN** the code sets, inline, a rotation from `Tool` to `Base` on the transform from `Link1` to `Base`
+#### Scenario: Origin in the wrong frame, inline
+- **WHEN** the code takes the homogeneous matrix of a rotation from `Link1` to `Base` with, inline, a point in `Link1` as origin
 - **THEN** the type checker reports an error
 - **AND** executing it raises an error naming the mistake
 
-#### Scenario: Translation in the wrong frame, inline
-- **WHEN** the code sets, inline, a vector in `Link1` as the translation of the transform from `Link1` to `Base`
+#### Scenario: A vector is not an origin
+- **WHEN** the code takes the homogeneous matrix of a rotation from `Link1` to `Base` with a vector in `Base` as origin
 - **THEN** the type checker reports an error
 - **AND** executing it raises an error naming the mistake
 
@@ -51,7 +47,7 @@ Composing ^A T_B with ^B T_C SHALL give ^A T_C, and composing transforms whose i
 - **AND** executing it raises an error naming the mistake
 
 ### Requirement: Transform inverse
-The inverse of ^A T_B SHALL be ^B T_A, with rotation Rᵀ and translation −Rᵀ t.
+The inverse of ^A T_B SHALL be ^B T_A, with rotation Rᵀ and position vector −Rᵀ t, where t is the position vector of B's origin in A.
 
 #### Scenario: Inverse composes to identity
 - **WHEN** the code composes a transform with its inverse and simplifies
@@ -68,7 +64,7 @@ Applying ^A T_B to a point in B SHALL give R p + t as a point in A.
 Applying ^A T_B to a vector in B SHALL give R v as a vector in A.
 
 #### Scenario: Translation does not move a vector
-- **WHEN** a transform with identity rotation and translation (5, 0, 0) is applied to the vector (1, 0, 0)
+- **WHEN** a transform with identity rotation and origin (5, 0, 0) is applied to the vector (1, 0, 0)
 - **THEN** the result is the vector (1, 0, 0)
 
 ### Requirement: Wrong source frame is a type error

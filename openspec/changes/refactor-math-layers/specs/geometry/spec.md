@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Models frames, and points and vectors resolved in a frame, so that the frame a set of components is read in is part of the value's type and affine mistakes are rejected before the code runs.
+Models frames, and positions (`Position`, alias `Point`; a point) and displacements (`Displacement`; a free vector) resolved in a frame, so that the frame a set of components is read in is part of the value's type and affine mistakes are rejected before the code runs.
 
 ## ADDED Requirements
 

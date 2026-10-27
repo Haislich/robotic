@@ -91,12 +91,11 @@ Updated 2026-10-26, local session on branch `refactor-math-layers` (the user wor
 | Item | Status | Location | Notes |
 |---|---|---|---|
 | `record-user-intent` | applied, committed (`e5e8a56`), archived | `openspec/changes/archive/2026-10-26-record-user-intent/` | User approved intent.md (I4 rewritten: "The contract grows by addition"), Roles, config.yaml (incl. the `context` sentence replaced, recorded in design D3) |
-| `refactor-math-layers` | review round 4 in progress (12.1 D35, 12.2 singular cases, 12.3 no validity condition, 12.4 cse, 12.5 simplify strategy, 12.6 no equality; written, not applied) | `openspec/changes/refactor-math-layers/` | To be revised against intent.md |
-| `.vscode` ty setup | not started | `.vscode/settings.json` | Claude's |
+| `refactor-math-layers` | review round 4 in progress (12.1 D35, 12.2 singular cases, 12.3 no validity condition, 12.4 cse, 12.5 simplify strategy, 12.6 no equality, 12.7 is_zero private, 12.8 compile, 12.9 exact numbers only, 12.10 homogeneous, 12.11 Position/Displacement; written, not applied) | `openspec/changes/refactor-math-layers/` | To be revised against intent.md |
+| `.vscode` ty setup | done by the user (committed in `a74929f`) | `.vscode/settings.json` | ty and ruff from the environment |
 
 ## 11. Next steps
 1. Revise `refactor-math-layers` against intent.md. Items, each framed functionally: runtime enforcement of every static promise (I0, I3; fixture lines also executed at runtime); `to_axis_angle` contract independent of the simplifier; `==`/`hash`/`bool` fail loudly until decided; `is_zero` public or not; the name `lambdify`; meaning of floats; `Transform.of_rotation` (I7); replace the Goals line "runtime checks only where measured"; re-label the two accepted risks (axis compiled alone, vanishing-norm normalize) as violations or open items.
-2. Configure ty in `.vscode` (Claude's), report with context.
 
 ## 12. Open questions ⚠️
 - None.
