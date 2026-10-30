@@ -161,18 +161,19 @@ robotic.symbolic.MissingParameterError: no value given for q1
 ```
 
 A constant is never undefined or infinite. An operation or an evaluation whose result
-would be raises `UndefinedValueError` at once, instead of handing back `nan`; the
-message says which, beside sympy's printed value. Complex values are not supported.
+would be undefined or infinite raises `UndefinedValueError` at once, instead of
+handing back `nan`; the message says which, beside sympy's printed value. Complex
+values are not supported.
 
 ```python
 >>> Scalar(1) / 0
 Traceback (most recent call last):
 ...
-robotic.symbolic.UndefinedValueError: the value is infinite (zoo), not a real number
+robotic.symbolic.UndefinedValueError: the value is infinite (zoo)
 >>> (q1.sin() / q1).evaluate({"q1": 0})
 Traceback (most recent call last):
 ...
-robotic.symbolic.UndefinedValueError: the value is undefined (nan), not a real number at q1 = 0
+robotic.symbolic.UndefinedValueError: the value is undefined (nan) at q1 = 0
 
 ```
 

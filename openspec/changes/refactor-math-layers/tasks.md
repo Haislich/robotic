@@ -156,6 +156,12 @@ From `/code-review 1692b14..HEAD` (2026-10-30) and the user's decision of the sa
 - [x] 17.2 `FreeAxis.evaluate` is typed `FreeAxis[Scalar, F]` (finding #5); verify `assert_type` on an evaluated symbolic free axis, failing first under ty
 - [x] 17.3 Verify the whole change as in 8.2
 
+## 18. Final cleanup
+
+From `/code-review 9378122..HEAD` (2026-10-30). No finding is a bug against the contract: #1 and #2 (values holding `I`) are out of scope by the decision of round 9 (user, 2026-10-30). The rest are names and wording left by the earlier "constants are real" rule.
+
+- [x] 18.1 `UndefinedValueError` says "the value is undefined (nan)" or "infinite (zoo)", without "not a real number"; `_real` and `NotReal` become `_undefined` and `Undefined`; `is_close` loses its unreachable `nan` branch and the promise about it; two scalar tests take the requirement's name; `Displacement.evaluate` says a free axis stays a free axis; the broken sentence of `docs/scalar.md` is fixed (findings #3-#8); verify the full check as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.

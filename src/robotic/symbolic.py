@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 jax.config.update(name="jax_enable_x64", val=True)
 
 _INFINITIES = frozenset({sympy.zoo, sympy.oo, sympy.S.NegativeInfinity})
-type NotReal = Literal["undefined", "infinite"]
+type Undefined = Literal["undefined", "infinite"]
 type ScalarLike = Scalar | int
 
 _DIGITS = 30
@@ -444,19 +444,19 @@ class Scalar(_Value["Scalar"]):
 
     @override
     def _of(self, expression: sympy.Expr) -> Scalar:
-        real = Scalar._real(expression)
-        if isinstance(real, str):
-            raise UndefinedValueError(str(expression), real)
-        return Scalar._wrap(real)
+        reason = Scalar._undefined(expression)
+        if reason is not None:
+            raise UndefinedValueError(str(expression), reason)
+        return Scalar._wrap(expression)
 
     @staticmethod
-    def _real(expression: sympy.Expr) -> sympy.Expr | NotReal:
+    def _undefined(expression: sympy.Expr) -> Undefined | None:
         for node in sympy.preorder_traversal(expression):
             if node is sympy.nan:
                 return "undefined"
             if node in _INFINITIES:
                 return "infinite"
-        return expression
+        return None
 
     @override
     def _accepts(self, other: object) -> bool:
@@ -482,8 +482,7 @@ class Scalar(_Value["Scalar"]):
             tolerance: The largest absolute difference accepted, not negative.
 
         Returns:
-            True when |self - other| <= tolerance; false when the difference is
-            undefined (`nan`, a value at a singular configuration).
+            True when |self - other| <= tolerance.
 
         Raises:
             TypeError: `other` is not a constant or an `int` (an expression: evaluate
@@ -503,10 +502,7 @@ class Scalar(_Value["Scalar"]):
             message = f"a tolerance is not negative, not {tolerance}"
             raise ValueError(message)
         difference = sympy.N(self._expression - Scalar._expression_of(other), _DIGITS)
-        magnitude = abs(difference)
-        if magnitude is sympy.nan:
-            return False
-        return bool(magnitude <= tolerance)
+        return bool(abs(difference) <= tolerance)
 
     @override
     def simplify(self) -> Self:
@@ -584,10 +580,10 @@ class Expression(_Value["Expression"]):
             for name, value in given.items()
         }
         value = self._expression.xreplace(substitution)
-        real = Scalar._real(value)
-        if isinstance(real, str):
-            raise UndefinedValueError(str(value), real, given)
-        return Scalar._wrap(real)
+        reason = Scalar._undefined(value)
+        if reason is not None:
+            raise UndefinedValueError(str(value), reason, given)
+        return Scalar._wrap(value)
 
     @override
     def simplify(self) -> Self:
@@ -705,17 +701,17 @@ class UndefinedValueError(ArithmeticError):
     def __init__(
         self,
         value: str,
-        reason: NotReal,
+        reason: Undefined,
         values: Mapping[str, ScalarLike] | None = None,
     ) -> None:
-        """Name the value obtained, why it is not real, and the values substituted.
+        """Name the value obtained, whether undefined or infinite, and the values given.
 
         Args:
             value: The value obtained, as printed.
-            reason: Why the value is not a real number.
+            reason: Whether the value is undefined or infinite.
             values: The values substituted, when evaluating.
         """
-        message = f"the value is {reason} ({value}), not a real number"
+        message = f"the value is {reason} ({value})"
         if values is not None:
             listed = ", ".join(f"{name} = {values[name]}" for name in sorted(values))
             message = f"{message} at {listed}"

@@ -585,8 +585,8 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
                 occur are allowed.
 
         Returns:
-            The constant displacement, a direction for a direction, in the same
-            frame.
+            The constant displacement, in the same frame; a direction stays a
+            direction and a free axis a free axis.
         """
         components = (
             self._x.evaluate(values),

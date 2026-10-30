@@ -1,4 +1,4 @@
-- [Refactor state](refactor-design-state.md) — D38 (Scalar/Expression/Symbol + kind parameter) applied 2026-10-30, 74/74 tasks, uncommitted; round 9 (no complex support) applied 93/93, uncommitted; next commit + review
+- [Refactor state](refactor-design-state.md) — D38 (Scalar/Expression/Symbol + kind parameter) applied 2026-10-30, 74/74 tasks, uncommitted; round 9 committed 453b1a2; review 9378122..HEAD running
 - [Fix algorithm bugs in the refactor](algorithm-bugs-are-users-job.md) — user reversed "keep the bugs"; fix them, name each fix
 - [Functional style, few free functions, wise dicts/tuples](no-free-functions-tuples-dicts.md) — methods on immutable types; dicts only for truly dynamic keys
 - [Narrow types, Protocols, no asserts](narrow-types-protocols-no-asserts.md) — type system does the narrowing, never assert

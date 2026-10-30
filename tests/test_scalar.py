@@ -204,7 +204,7 @@ def test_equal_constants_have_no_equality() -> None:
         operator.eq(Scalar(2), Scalar(2))
 
 
-def test_constants_are_real_numbers() -> None:
+def test_constants_are_never_undefined_or_infinite() -> None:
     with pytest.raises(UndefinedValueError):
         Scalar(0) / 0
     with pytest.raises(UndefinedValueError):
@@ -220,7 +220,7 @@ def test_evaluating_where_an_expression_is_undefined() -> None:
         (q.sin() / q).evaluate({"q": 0})
 
 
-def test_the_error_says_why_a_value_is_not_real() -> None:
+def test_the_error_says_whether_undefined_or_infinite() -> None:
     with pytest.raises(UndefinedValueError, match=r"^the value is undefined \(nan\)"):
         Scalar(0) / 0
     with pytest.raises(UndefinedValueError, match=r"^the value is infinite \(zoo\)"):
