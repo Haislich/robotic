@@ -32,9 +32,8 @@ class Transform[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[
     It is the rotation ^A R_B and the translation, the origin of B as a position in A,
     vector p is the fourth column. On a position it is R p + t, on a displacement
     R v. Built only as `rotation.homogeneous(translation)`; constant when both are.
-    Its constant components are real numbers: an operation or an
-    `evaluate` that would give one undefined, infinite or complex raises
-    `UndefinedValueError`.
+    No constant component is undefined or infinite: an
+    operation or an `evaluate` that would give one raises `UndefinedValueError`.
     """
 
     __slots__ = ("_rotation", "_translation")

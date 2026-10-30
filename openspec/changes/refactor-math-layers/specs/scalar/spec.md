@@ -81,8 +81,8 @@ An expression, and every symbolic point, vector, rotation, transform and axis-an
 - **THEN** the type checker reports an error
 - **AND** executing it raises an error naming the mistake
 
-### Requirement: Constants are real numbers
-A constant SHALL always have a real value: an operation or evaluation whose constant result is undefined, infinite or complex SHALL raise an error at once.
+### Requirement: Constants are never undefined or infinite
+An operation or evaluation whose constant result is undefined or infinite SHALL raise an error at once. Complex values are not supported (see the proposal's Out of Scope).
 
 #### Scenario: Zero divided by zero
 - **WHEN** the code computes `Scalar(0) / 0`
@@ -90,10 +90,6 @@ A constant SHALL always have a real value: an operation or evaluation whose cons
 
 #### Scenario: Division by zero
 - **WHEN** the code computes `Scalar(1) / 0`
-- **THEN** an error is raised
-
-#### Scenario: Square root of a negative constant
-- **WHEN** the code computes `Scalar(-1).sqrt()`
 - **THEN** an error is raised
 
 #### Scenario: Evaluating where an expression is undefined

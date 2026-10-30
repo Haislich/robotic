@@ -160,9 +160,9 @@ robotic.symbolic.MissingParameterError: no value given for q1
 
 ```
 
-A constant is always a real number. An operation or an evaluation whose result would
-be undefined, infinite or complex raises `UndefinedValueError` at once, instead of
-handing back `nan`; the message says which, beside sympy's printed value:
+A constant is never undefined or infinite. An operation or an evaluation whose result
+would be raises `UndefinedValueError` at once, instead of handing back `nan`; the
+message says which, beside sympy's printed value. Complex values are not supported.
 
 ```python
 >>> Scalar(1) / 0

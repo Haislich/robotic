@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 jax.config.update(name="jax_enable_x64", val=True)
 
 _INFINITIES = frozenset({sympy.zoo, sympy.oo, sympy.S.NegativeInfinity})
-type NotReal = Literal["undefined", "infinite", "complex"]
+type NotReal = Literal["undefined", "infinite"]
 type ScalarLike = Scalar | int
 
 _DIGITS = 30
@@ -414,10 +414,10 @@ class Scalar(_Value["Scalar"]):
 
     Arithmetic accepts a constant or an `int` on either side and gives a constant;
     with an expression it gives an expression. A `float` is rejected, so every value
-    stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`). A constant is always a real
-    number: an operation whose result would be undefined, infinite or complex (0/0,
-    1/0, the square root of a negative) raises `UndefinedValueError`. Constants
-    compare with a tolerance through `is_close`.
+    stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`). A constant is never undefined
+    or infinite: an operation whose result would be (0/0, 1/0) raises
+    `UndefinedValueError`. Complex values are not supported. Constants compare with a
+    tolerance through `is_close`.
     """
 
     __slots__ = ()
@@ -451,32 +451,12 @@ class Scalar(_Value["Scalar"]):
 
     @staticmethod
     def _real(expression: sympy.Expr) -> sympy.Expr | NotReal:
-        maybe_complex = False
         for node in sympy.preorder_traversal(expression):
             if node is sympy.nan:
                 return "undefined"
             if node in _INFINITIES:
                 return "infinite"
-            maybe_complex = maybe_complex or Scalar._may_be_complex(node)
-        if not maybe_complex:
-            return expression
-        match expression.expand(complex=True):
-            case sympy.Expr() as parts:
-                return "complex" if parts.has(sympy.I) else parts
-            case other:
-                message = f"expansion returned a non-expression {other!r}"
-                raise TypeError(message)
-
-    @staticmethod
-    def _may_be_complex(node: sympy.Basic) -> bool:
-        if node is sympy.I:
-            return True
-        return (
-            isinstance(node, sympy.Pow)
-            and node.base.is_Number
-            and node.base.is_negative is True
-            and node.exp.is_integer is not True
-        )
+        return expression
 
     @override
     def _accepts(self, other: object) -> bool:
@@ -585,8 +565,8 @@ class Expression(_Value["Expression"]):
         Raises:
             TypeError: A name is not a string or a value is not exact.
             MissingParameterError: A symbol has no value.
-            UndefinedValueError: The values make the expression undefined, infinite
-                or complex.
+            UndefinedValueError: The values make the expression undefined or
+                infinite.
         """
         given = {} if values is None else values
         for name, value in given.items():
@@ -720,7 +700,7 @@ class MissingParameterError(ValueError):
 
 
 class UndefinedValueError(ArithmeticError):
-    """A constant would not be a real number: undefined, infinite or complex."""
+    """A constant would be undefined or infinite."""
 
     def __init__(
         self,

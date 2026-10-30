@@ -195,9 +195,9 @@ class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K
 
     Its columns are the axes of B resolved in A, so `R @ v` resolves in A an arrow
     given in B. It is constant (`Rotation[Scalar, A, B]`) when built from constants
-    only, and symbolic (`Rotation[Expression, A, B]`) otherwise. Its constant
-    components are real numbers: an operation or an `evaluate` that would give one
-    undefined, infinite or complex raises `UndefinedValueError`.
+    only, and symbolic (`Rotation[Expression, A, B]`) otherwise. No constant
+    component is undefined or infinite: an operation or an `evaluate` that would give
+    one raises `UndefinedValueError`.
     """
 
     __slots__ = ("_matrix", "_source", "_target")

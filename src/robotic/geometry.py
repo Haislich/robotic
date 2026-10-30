@@ -288,9 +288,8 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
 
     A free vector: it has no anchor, so a change of frame rotates it and never
     translates it. `frame.displacement(x, y, z)` is the usual spelling of
-    `Displacement(x, y, z, frame)`. Its constant components are real numbers: an
-    operation or an `evaluate` that would give one undefined, infinite or complex
-    raises `UndefinedValueError`.
+    `Displacement(x, y, z, frame)`. No constant component is undefined or infinite:
+    an operation or an `evaluate` that would give one raises `UndefinedValueError`.
     """
 
     __slots__ = ()
@@ -556,6 +555,12 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
 
     @overload
     def evaluate(
+        self: FreeAxis[Expression, F],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> FreeAxis[Scalar, F]: ...
+
+    @overload
+    def evaluate(
         self: Direction[Expression, F],
         values: Mapping[str, ScalarLike] | None = None,
     ) -> Direction[Scalar, F]: ...
@@ -690,9 +695,8 @@ class Position[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
 
     A position vector: a change of frame rotates it and moves it with the origin.
     `frame.position(x, y, z)` is the usual spelling of `Position(x, y, z, frame)`.
-    Its constant components are real numbers: an operation or an
-    `evaluate` that would give one undefined, infinite or complex raises
-    `UndefinedValueError`.
+    No constant component is undefined or infinite: an
+    operation or an `evaluate` that would give one raises `UndefinedValueError`.
     """
 
     __slots__ = ()

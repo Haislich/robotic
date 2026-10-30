@@ -216,4 +216,5 @@ def test_frame_mismatch_messages_name_the_operands_by_kind() -> None:
 
 def test_an_evaluated_free_axis_stays_a_free_axis() -> None:
     axis = FreeAxis(Base.displacement(q, 0, 1)).evaluate({"q": 0})
+    assert_type(axis, FreeAxis[Scalar, Base])
     assert repr(axis) == "FreeAxis[Base](0, 0, 1)"

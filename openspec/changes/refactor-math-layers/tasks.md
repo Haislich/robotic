@@ -148,6 +148,14 @@ From `/code-review 92ff8f3..HEAD` (2026-10-30). Finding #7 (the operand label re
 - [x] 16.4 Document `UndefinedValueError` (findings #5, #6): `Expression.evaluate` raises it directly and lists it under `Raises`; `Scalar` and the composites (`Displacement`, `Position`, `Rotation`, `Transform`, `AxisAngleSolutions`), which raise it through their components, state it in their class docstrings, since ruff's `docstring-extraneous-exception` rejects a `Raises` entry a method does not raise itself (design D38); verify ruff's docstring rules pass
 - [x] 16.5 Verify the whole change as in 8.2
 
+## 17. Review round 9
+
+From `/code-review 1692b14..HEAD` (2026-10-30) and the user's decision of the same day: complex values are not supported (design D38; findings #1, #2, #3, #7, #9 go with the complex check). Finding #8 (three private factories) is kept, as recorded in D38.
+
+- [x] 17.1 Remove the complex tier of the constant check: one pass for `nan` and the infinities, the reason is `undefined` or `infinite`, and the docstrings, tests and `docs/` no longer promise anything on complex values (design D38); verify the scalar scenarios "Constants are never undefined or infinite" pass and `rg -n "complex" src docs` finds no promise about complex values
+- [x] 17.2 `FreeAxis.evaluate` is typed `FreeAxis[Scalar, F]` (finding #5); verify `assert_type` on an evaluated symbolic free axis, failing first under ty
+- [x] 17.3 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.
