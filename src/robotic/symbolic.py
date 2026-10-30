@@ -10,7 +10,16 @@ import operator
 import typing
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, NoReturn, Self, final, overload, override
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Literal,
+    NoReturn,
+    Self,
+    final,
+    overload,
+    override,
+)
 
 import jax
 import jax.numpy as jnp
@@ -25,6 +34,8 @@ if TYPE_CHECKING:
 
 jax.config.update(name="jax_enable_x64", val=True)
 
+_INFINITIES = frozenset({sympy.zoo, sympy.oo, sympy.S.NegativeInfinity})
+type NotReal = Literal["undefined", "infinite", "complex"]
 type ScalarLike = Scalar | int
 
 _DIGITS = 30
@@ -433,14 +444,38 @@ class Scalar(_Value["Scalar"]):
 
     @override
     def _of(self, expression: sympy.Expr) -> Scalar:
-        if not Scalar._is_real_number(expression):
-            raise UndefinedValueError(str(expression))
-        return Scalar._wrap(expression)
+        real = Scalar._real(expression)
+        if isinstance(real, str):
+            raise UndefinedValueError(str(expression), real)
+        return Scalar._wrap(real)
 
     @staticmethod
-    def _is_real_number(expression: sympy.Expr) -> bool:
-        return not expression.has(
-            sympy.nan, sympy.zoo, sympy.oo, sympy.S.NegativeInfinity, sympy.I
+    def _real(expression: sympy.Expr) -> sympy.Expr | NotReal:
+        maybe_complex = False
+        for node in sympy.preorder_traversal(expression):
+            if node is sympy.nan:
+                return "undefined"
+            if node in _INFINITIES:
+                return "infinite"
+            maybe_complex = maybe_complex or Scalar._may_be_complex(node)
+        if not maybe_complex:
+            return expression
+        match expression.expand(complex=True):
+            case sympy.Expr() as parts:
+                return "complex" if parts.has(sympy.I) else parts
+            case other:
+                message = f"expansion returned a non-expression {other!r}"
+                raise TypeError(message)
+
+    @staticmethod
+    def _may_be_complex(node: sympy.Basic) -> bool:
+        if node is sympy.I:
+            return True
+        return (
+            isinstance(node, sympy.Pow)
+            and node.base.is_Number
+            and node.base.is_negative is True
+            and node.exp.is_integer is not True
         )
 
     @override
@@ -569,9 +604,10 @@ class Expression(_Value["Expression"]):
             for name, value in given.items()
         }
         value = self._expression.xreplace(substitution)
-        if not Scalar._is_real_number(value):
-            raise UndefinedValueError(str(value), given)
-        return Scalar._wrap(value)
+        real = Scalar._real(value)
+        if isinstance(real, str):
+            raise UndefinedValueError(str(value), real, given)
+        return Scalar._wrap(real)
 
     @override
     def simplify(self) -> Self:
@@ -687,15 +723,19 @@ class UndefinedValueError(ArithmeticError):
     """A constant would not be a real number: undefined, infinite or complex."""
 
     def __init__(
-        self, value: str, values: Mapping[str, ScalarLike] | None = None
+        self,
+        value: str,
+        reason: NotReal,
+        values: Mapping[str, ScalarLike] | None = None,
     ) -> None:
-        """Name the value obtained, and the values substituted if any.
+        """Name the value obtained, why it is not real, and the values substituted.
 
         Args:
             value: The value obtained, as printed.
+            reason: Why the value is not a real number.
             values: The values substituted, when evaluating.
         """
-        message = f"{value} is not a real number"
+        message = f"the value is {reason} ({value}), not a real number"
         if values is not None:
             listed = ", ".join(f"{name} = {values[name]}" for name in sorted(values))
             message = f"{message} at {listed}"

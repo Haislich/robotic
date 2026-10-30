@@ -87,7 +87,8 @@ class AxisAngleSolutions[K: (Scalar, Expression), F: Frame](Symbolic[K]):
 
     Course convention: regular case (r, theta) and (-r, -theta); half turn (r, pi) and
     (-r, pi); identity (a, 0) and (-a, 0) with a free axis a. For a symbolic rotation,
-    the regular formulas, wherever they hold; nothing predicts where they break.
+    the regular formulas, wherever they hold; nothing predicts where they break, and
+    `evaluate` where they do raises `UndefinedValueError`.
     """
 
     __slots__ = ("_first", "_second")
@@ -194,7 +195,9 @@ class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K
 
     Its columns are the axes of B resolved in A, so `R @ v` resolves in A an arrow
     given in B. It is constant (`Rotation[Scalar, A, B]`) when built from constants
-    only, and symbolic (`Rotation[Expression, A, B]`) otherwise.
+    only, and symbolic (`Rotation[Expression, A, B]`) otherwise. Its constant
+    components are real numbers: an operation or an `evaluate` that would give one
+    undefined, infinite or complex raises `UndefinedValueError`.
     """
 
     __slots__ = ("_matrix", "_source", "_target")

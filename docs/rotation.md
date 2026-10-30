@@ -141,7 +141,7 @@ axis: at q1 = 0 the skew part of ^0 R_1 vanishes.
 >>> solutions.evaluate({"q1": 0})
 Traceback (most recent call last):
 ...
-robotic.symbolic.UndefinedValueError: nan is not a real number at q1 = 0
+robotic.symbolic.UndefinedValueError: the value is undefined (nan), not a real number at q1 = 0
 
 ```
 

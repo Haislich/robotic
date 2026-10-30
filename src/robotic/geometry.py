@@ -288,7 +288,9 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
 
     A free vector: it has no anchor, so a change of frame rotates it and never
     translates it. `frame.displacement(x, y, z)` is the usual spelling of
-    `Displacement(x, y, z, frame)`.
+    `Displacement(x, y, z, frame)`. Its constant components are real numbers: an
+    operation or an `evaluate` that would give one undefined, infinite or complex
+    raises `UndefinedValueError`.
     """
 
     __slots__ = ()
@@ -671,6 +673,16 @@ class FreeAxis[K: (Scalar, Expression), F: Frame](Direction[K, F]):
         made._frame = displacement.frame
         return made
 
+    @classmethod
+    @override
+    def _of[J: (Scalar, Expression), G: Frame](
+        cls, values: tuple[J, ...], frame: type[G]
+    ) -> FreeAxis[J, G]:
+        made: FreeAxis[J, G] = object.__new__(FreeAxis)
+        made._x, made._y, made._z = values
+        made._frame = frame
+        return made
+
 
 @final
 class Position[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
@@ -678,6 +690,9 @@ class Position[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
 
     A position vector: a change of frame rotates it and moves it with the origin.
     `frame.position(x, y, z)` is the usual spelling of `Position(x, y, z, frame)`.
+    Its constant components are real numbers: an operation or an
+    `evaluate` that would give one undefined, infinite or complex raises
+    `UndefinedValueError`.
     """
 
     __slots__ = ()

@@ -212,3 +212,8 @@ def test_frame_mismatch_messages_name_the_operands_by_kind() -> None:
         operator.methodcaller("dot", tool)(base)
     with pytest.raises(FrameMismatchError, match=message("take the cross product of")):
         operator.methodcaller("cross", tool)(base)
+
+
+def test_an_evaluated_free_axis_stays_a_free_axis() -> None:
+    axis = FreeAxis(Base.displacement(q, 0, 1)).evaluate({"q": 0})
+    assert repr(axis) == "FreeAxis[Base](0, 0, 1)"

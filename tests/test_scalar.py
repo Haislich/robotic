@@ -220,3 +220,22 @@ def test_constants_are_real_numbers() -> None:
 def test_evaluating_where_an_expression_is_undefined() -> None:
     with pytest.raises(UndefinedValueError, match="q = 0"):
         (q.sin() / q).evaluate({"q": 0})
+
+
+def test_a_complex_principal_root_is_not_a_real_number() -> None:
+    with pytest.raises(UndefinedValueError):
+        Scalar(-8) ** (Scalar(1) / 3)
+
+
+def test_a_real_value_through_complex_steps_is_a_real_number() -> None:
+    product = (q.sqrt() + 1) * (q.sqrt() - 1)
+    assert repr(product.evaluate({"q": -1})) == "-2"
+
+
+def test_the_error_says_why_a_value_is_not_real() -> None:
+    with pytest.raises(UndefinedValueError, match=r"^the value is undefined \(nan\)"):
+        Scalar(0) / 0
+    with pytest.raises(UndefinedValueError, match=r"^the value is infinite \(zoo\)"):
+        Scalar(1) / 0
+    with pytest.raises(UndefinedValueError, match=r"^the value is complex"):
+        Scalar(-1).sqrt()

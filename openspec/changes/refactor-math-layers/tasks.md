@@ -138,6 +138,16 @@ From `/code-review 08fef31..HEAD` (2026-10-30) and the user's decisions of the s
 - [x] 15.6 Document `UndefinedValueError` in `docs/scalar.md` and `docs/rotation.md`; verify `tests/test_docs.py` passes
 - [x] 15.7 Verify the whole change as in 8.2
 
+## 16. Review round 8
+
+From `/code-review 92ff8f3..HEAD` (2026-10-30). Finding #7 (the operand label repeated in seven places) is kept, as recorded in D35.
+
+- [x] 16.1 The real-number check of constants in two tiers (design D38; findings #1, #2, #8): one pass rejects `nan`, `zoo` and the infinities; a value holding `I` or a fractional power of a negative number is expanded into real and imaginary parts and rejected only if `I` remains; verify `Scalar(-8) ** (Scalar(1) / 3)` raises and `((q.sqrt() + 1) * (q.sqrt() - 1)).evaluate({"q": -1})` gives -2, both failing first
+- [x] 16.2 The message of `UndefinedValueError` says undefined, infinite or complex in words, beside the value (finding #9); verify the scalar tests and `docs/` pass with the new wording
+- [x] 16.3 `FreeAxis.evaluate` keeps `FreeAxis` (finding #3), through a private factory on each displacement class; one factory built from `cls` (finding #4) is not possible in ty 0.0.91, see D38; verify a test evaluating a symbolic free axis fails first, then passes
+- [x] 16.4 Document `UndefinedValueError` (findings #5, #6): `Expression.evaluate` raises it directly and lists it under `Raises`; `Scalar` and the composites (`Displacement`, `Position`, `Rotation`, `Transform`, `AxisAngleSolutions`), which raise it through their components, state it in their class docstrings, since ruff's `docstring-extraneous-exception` rejects a `Raises` entry a method does not raise itself (design D38); verify ruff's docstring rules pass
+- [x] 16.5 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.
