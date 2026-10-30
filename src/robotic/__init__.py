@@ -22,6 +22,7 @@ from robotic.symbolic import (
     ScalarLike,
     Symbol,
     Symbolic,
+    UndefinedValueError,
 )
 from robotic.transform import Index4, Transform
 
@@ -49,5 +50,6 @@ __all__ = [
     "Symbol",
     "Symbolic",
     "Transform",
+    "UndefinedValueError",
     "ZeroVectorError",
 ]

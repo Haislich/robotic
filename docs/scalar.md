@@ -160,6 +160,22 @@ robotic.symbolic.MissingParameterError: no value given for q1
 
 ```
 
+A constant is always a real number. An operation or an evaluation whose result would
+be undefined, infinite or complex raises `UndefinedValueError` at once, instead of
+handing back `nan` (`zoo` is sympy's complex infinity):
+
+```python
+>>> Scalar(1) / 0
+Traceback (most recent call last):
+...
+robotic.symbolic.UndefinedValueError: zoo is not a real number
+>>> (q1.sin() / q1).evaluate({"q1": 0})
+Traceback (most recent call last):
+...
+robotic.symbolic.UndefinedValueError: nan is not a real number at q1 = 0
+
+```
+
 ## No equality
 
 No symbolic value has `==`, a hash or a truth value: each raises instead of answering

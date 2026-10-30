@@ -139,12 +139,8 @@ class AxisAngleSolutions[K: (Scalar, Expression), F: Frame](Symbolic[K]):
         """
         first, second = self._first, self._second
         return AxisAngleSolutions(
-            AxisAngle(
-                Direction(first.axis.evaluate(values)), first.angle.evaluate(values)
-            ),
-            AxisAngle(
-                Direction(second.axis.evaluate(values)), second.angle.evaluate(values)
-            ),
+            AxisAngle(first.axis.evaluate(values), first.angle.evaluate(values)),
+            AxisAngle(second.axis.evaluate(values), second.angle.evaluate(values)),
         )
 
     @override
@@ -494,7 +490,8 @@ class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K
             message = f"the translation is a position, not {translation!r}"
             raise TypeError(message)
         if translation.frame is not self._target:
-            operation = f"translate {self._kind()} by {translation!r}"
+            kind = f"{type(translation).__name__}[{translation.frame.__name__}]"
+            operation = f"translate {self._kind()} by {kind}"
             raise FrameMismatchError(operation, self._target, translation.frame)
         return self._assembled(translation)
 
@@ -569,7 +566,8 @@ class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K
                 )
             case Displacement():
                 if other.frame is not self._source:
-                    operation = f"apply {self._kind()} to {other!r}"
+                    kind = f"{type(other).__name__}[{other.frame.__name__}]"
+                    operation = f"apply {self._kind()} to {kind}"
                     raise FrameMismatchError(operation, self._source, other.frame)
                 x, y, z = (
                     self.entry(row, 1) * other.x
@@ -646,7 +644,8 @@ class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K
                 message = f"the free axis is a constant direction, not {free_axis!r}"
                 raise TypeError(message)
             if free_axis.frame is not self._target:
-                operation = f"take {free_axis!r} as the free axis of {self._kind()}"
+                kind = f"{type(free_axis).__name__}[{free_axis.frame.__name__}]"
+                operation = f"take {kind} as the free axis of {self._kind()}"
                 raise FrameMismatchError(operation, self._target, free_axis.frame)
         if Rotation._is_constant(self):
             return Rotation._constant_solutions(self, free_axis)

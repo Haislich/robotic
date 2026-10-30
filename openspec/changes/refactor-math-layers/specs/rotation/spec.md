@@ -102,6 +102,10 @@ A constant rotation SHALL be resolved as the regular, half-turn or identity case
 - **WHEN** the code extracts axis-angle from the rotation about z by a symbol `q`
 - **THEN** both solutions are the regular formulas as expressions in `q`, no value is substituted, and no condition on `q` is attached
 
+#### Scenario: Evaluating at a singular configuration raises
+- **WHEN** the code evaluates the axis-angle solutions of the rotation about z by a symbol `q` with `q` set to 0
+- **THEN** an error is raised, not a `nan` axis
+
 ### Requirement: Half turn
 For a rotation by π, the two solutions SHALL be (r, π) and (−r, π).
 

@@ -1,5 +1,7 @@
 """Scenarios of the `geometry` capability."""
 
+import operator
+import re
 from typing import assert_type
 
 import pytest
@@ -9,6 +11,7 @@ from robotic import (
     Displacement,
     Expression,
     Frame,
+    FrameMismatchError,
     FreeAxis,
     Point,
     Position,
@@ -193,3 +196,19 @@ def test_declared_notation() -> None:
 def test_misspelled_declaration_raises_at_runtime() -> None:
     with pytest.raises(TypeError, match="notaton"):
         type("Misspelled", (Frame,), {}, notaton="1")
+
+
+def test_frame_mismatch_messages_name_the_operands_by_kind() -> None:
+    base, tool = Base.displacement(1, 0, 0), Tool.displacement(0, 1, 0)
+    operands = "Displacement[Base] and Displacement[Tool]"
+    frames = "frame Tool where Base is expected"
+
+    def message(verb: str) -> str:
+        return f"^{re.escape(f'cannot {verb} {operands}: {frames}')}$"
+
+    with pytest.raises(FrameMismatchError, match=message("add")):
+        operator.methodcaller("__add__", tool)(base)
+    with pytest.raises(FrameMismatchError, match=message("take the dot product of")):
+        operator.methodcaller("dot", tool)(base)
+    with pytest.raises(FrameMismatchError, match=message("take the cross product of")):
+        operator.methodcaller("cross", tool)(base)

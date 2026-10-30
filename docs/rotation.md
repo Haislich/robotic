@@ -134,6 +134,17 @@ AxisAngle(axis=FreeAxis[Base](0, 0, 1), angle=0)
 
 ```
 
+Evaluating the regular formulas where they break raises, rather than giving a `nan`
+axis: at q1 = 0 the skew part of ^0 R_1 vanishes.
+
+```python
+>>> solutions.evaluate({"q1": 0})
+Traceback (most recent call last):
+...
+robotic.symbolic.UndefinedValueError: nan is not a real number at q1 = 0
+
+```
+
 A constant half turn and the identity are recognized exactly. For the identity any axis is
 valid; it is a `FreeAxis`, z unless you choose another:
 

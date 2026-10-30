@@ -19,6 +19,7 @@ from robotic import (
     Rotation,
     Scalar,
     Symbol,
+    UndefinedValueError,
 )
 
 
@@ -261,7 +262,22 @@ def test_axis_angle_matches_the_oracle(value: float) -> None:
     assert angle == pytest.approx(value, abs=1e-9)
 
 
-def test_solutions_evaluated_at_a_singular_configuration_are_undefined() -> None:
-    solutions = Rotation.about_z(q, target=Base, source=Tool).to_axis_angle()
-    evaluated = solutions.evaluate({"q": 0})
-    assert repr(evaluated.first.axis) == "Direction[Base](nan, nan, nan)"
+def test_evaluating_at_a_singular_configuration_raises() -> None:
+    solutions = Rotation.about_z(q, target=Base, source=Link1).to_axis_angle()
+    with pytest.raises(UndefinedValueError):
+        solutions.evaluate({"q": 0})
+
+
+def test_an_evaluated_axis_is_not_normalized_again() -> None:
+    q2 = Symbol("q2")
+    rotation = Rotation.about_z(q1, target=Base, source=Link1) @ Rotation.about_x(
+        q2, target=Link1, source=Tool
+    )
+    solutions = rotation.to_axis_angle()
+    values = {"q1": 1, "q2": 1}
+    evaluated = solutions.evaluate(values).first.axis
+    assert_type(evaluated, Direction[Scalar, Base])
+    axis = solutions.first.axis
+    components = (axis.x, axis.y, axis.z)
+    listed = ", ".join(repr(component.evaluate(values)) for component in components)
+    assert repr(evaluated) == f"Direction[Base]({listed})"

@@ -81,6 +81,25 @@ An expression, and every symbolic point, vector, rotation, transform and axis-an
 - **THEN** the type checker reports an error
 - **AND** executing it raises an error naming the mistake
 
+### Requirement: Constants are real numbers
+A constant SHALL always have a real value: an operation or evaluation whose constant result is undefined, infinite or complex SHALL raise an error at once.
+
+#### Scenario: Zero divided by zero
+- **WHEN** the code computes `Scalar(0) / 0`
+- **THEN** an error is raised
+
+#### Scenario: Division by zero
+- **WHEN** the code computes `Scalar(1) / 0`
+- **THEN** an error is raised
+
+#### Scenario: Square root of a negative constant
+- **WHEN** the code computes `Scalar(-1).sqrt()`
+- **THEN** an error is raised
+
+#### Scenario: Evaluating where an expression is undefined
+- **WHEN** the code evaluates `q.sin() / q` with `q` set to 0
+- **THEN** an error naming the values substituted is raised
+
 ### Requirement: Symbols are created only by the library
 The library SHALL provide the only way to create a symbol, from a name, with fixed assumptions, so that two symbols with the same name are the same symbol.
 

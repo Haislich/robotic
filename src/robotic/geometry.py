@@ -496,7 +496,8 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
             message = f"dot takes a displacement, not {type(other).__name__}"
             raise TypeError(message)
         if other.frame is not self._frame:
-            operation = f"take the dot product of {self._kind()} and {other!r}"
+            kind = f"{type(other).__name__}[{other.frame.__name__}]"
+            operation = f"take the dot product of {self._kind()} and {kind}"
             raise FrameMismatchError(operation, self._frame, other.frame)
         return self._x * other.x + self._y * other.y + self._z * other.z
 
@@ -524,7 +525,8 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
             message = f"cross takes a displacement, not {type(other).__name__}"
             raise TypeError(message)
         if other.frame is not self._frame:
-            operation = f"take the cross product of {self._kind()} and {other!r}"
+            kind = f"{type(other).__name__}[{other.frame.__name__}]"
+            operation = f"take the cross product of {self._kind()} and {kind}"
             raise FrameMismatchError(operation, self._frame, other.frame)
         return Displacement(
             self._y * other.z - self._z * other.y,
@@ -550,27 +552,41 @@ class Displacement[K: (Scalar, Expression), F: Frame](_Resolved[K, F]):
         """
         return Direction(self)
 
+    @overload
+    def evaluate(
+        self: Direction[Expression, F],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> Direction[Scalar, F]: ...
+
+    @overload
+    def evaluate(
+        self: Displacement[Expression, F],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> Displacement[Scalar, F]: ...
+
     def evaluate(
         self: Displacement[Expression, F],
         values: Mapping[str, ScalarLike] | None = None,
     ) -> Displacement[Scalar, F]:
         """Substitute exact values for the symbols.
 
+        A direction stays a direction: its length stays one, so nothing is
+        normalized again.
+
         Args:
             values: The value of each symbol, by name; values for symbols that do not
                 occur are allowed.
 
         Returns:
-            The constant displacement, in the same frame.
+            The constant displacement, a direction for a direction, in the same
+            frame.
         """
-        return Displacement._of(
-            (
-                self._x.evaluate(values),
-                self._y.evaluate(values),
-                self._z.evaluate(values),
-            ),
-            self._frame,
+        components = (
+            self._x.evaluate(values),
+            self._y.evaluate(values),
+            self._z.evaluate(values),
         )
+        return self._of(components, self._frame)
 
 
 class Direction[K: (Scalar, Expression), F: Frame](Displacement[K, F]):
@@ -613,6 +629,16 @@ class Direction[K: (Scalar, Expression), F: Frame](Displacement[K, F]):
             displacement.y / length,
             displacement.z / length,
         )
+
+    @classmethod
+    @override
+    def _of[J: (Scalar, Expression), G: Frame](
+        cls, values: tuple[J, ...], frame: type[G]
+    ) -> Direction[J, G]:
+        made: Direction[J, G] = object.__new__(Direction)
+        made._x, made._y, made._z = values
+        made._frame = frame
+        return made
 
     @override
     def __neg__(self) -> Self:

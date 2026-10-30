@@ -48,6 +48,6 @@ None. `openspec/specs/` is empty.
 - Euler angles and RPY (deferred to their own change; design D24).
 - Numeric backends other than JAX.
 - Static tracking of which symbols an expression contains.
-- Singular configurations (an axis compiled alone, a symbolic direction whose norm vanishes at some or all configurations): whether they raise, carry a validity flag, or are caught by a debug mode. Open on purpose (`openspec/intent.md`); this change promises no value there, not even `nan`, though sympy may print `nan` symbolically where it evaluates a norm to zero itself (design D13, D38).
+- Singular configurations (an axis compiled alone, a symbolic direction whose norm vanishes at some or all configurations): whether they raise, carry a validity flag, or are caught by a debug mode. Open on purpose (`openspec/intent.md`); this change promises no value there, not even `nan`, though sympy may print `nan` symbolically where it evaluates a norm to zero itself (design D13, D38). Evaluating at such a configuration with exact values raises (design D38).
 - Tolerance comparison of composite constants (positions, rotations, transforms), beside `Scalar.is_close`: no use yet (design D38).
 - The ast-grep style-rule change (separate, small, planned), including a ban on identifiers ending in a single `_` (keyword escapes such as `from_`).

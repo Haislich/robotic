@@ -156,14 +156,16 @@ class Transform[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[
                 return rotation.homogeneous(self @ other.translation)
             case Position():
                 if other.frame is not source:
-                    operation = f"apply {self._kind()} to {other!r}"
+                    kind = f"{type(other).__name__}[{other.frame.__name__}]"
+                    operation = f"apply {self._kind()} to {kind}"
                     raise FrameMismatchError(operation, source, other.frame)
                 return self._translation + self._rotation @ (
                     other - other.frame.origin()
                 )
             case Displacement():
                 if other.frame is not source:
-                    operation = f"apply {self._kind()} to {other!r}"
+                    kind = f"{type(other).__name__}[{other.frame.__name__}]"
+                    operation = f"apply {self._kind()} to {kind}"
                     raise FrameMismatchError(operation, source, other.frame)
                 return self._rotation @ other
             case _:

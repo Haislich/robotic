@@ -1,5 +1,6 @@
 """Scenarios of the `transform` capability, with spatialmath as the oracle."""
 
+import copy
 import math
 import operator
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from robotic import (
     Displacement,
     Expression,
     Frame,
+    FreeAxis,
     Position,
     Rotation,
     Scalar,
@@ -185,3 +187,20 @@ def test_chain_matches_the_oracle(first: float, second: float) -> None:
     inverse = planar_arm().inverse().compile(Joints)
     inverse_numbers = inverse(Joints(q1=first, q2=second, l1=1.0, l2=0.5)).components
     np.testing.assert_allclose(np.asarray(inverse_numbers), oracle.inv().A, atol=1e-12)
+
+
+def test_values_copy() -> None:
+    q1 = Symbol("q1")
+    rotation = Rotation.about_z(q1, target=Base, source=Tool)
+    values = (
+        Base.position(1, 2, 3),
+        Base.displacement(q1, 0, 1),
+        Base.direction(1, 1, 0),
+        FreeAxis(Base.displacement(0, 0, 1)),
+        rotation,
+        rotation.homogeneous(Base.position(1, 0, 0)),
+        rotation.to_axis_angle(),
+    )
+    for value in values:
+        assert repr(copy.copy(value)) == repr(value)
+        assert repr(copy.deepcopy(value)) == repr(value)

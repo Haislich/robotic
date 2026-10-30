@@ -14,6 +14,7 @@ from robotic import (
     Scalar,
     Symbol,
     Transform,
+    UndefinedValueError,
 )
 
 
@@ -201,3 +202,21 @@ def test_missing_value() -> None:
 def test_equal_constants_have_no_equality() -> None:
     with pytest.raises(TypeError, match="is_close"):
         operator.eq(Scalar(2), Scalar(2))
+
+
+def test_constants_are_real_numbers() -> None:
+    with pytest.raises(UndefinedValueError):
+        Scalar(0) / 0
+    with pytest.raises(UndefinedValueError):
+        Scalar(1) / 0
+    with pytest.raises(UndefinedValueError):
+        Scalar(-1).sqrt()
+    with pytest.raises(UndefinedValueError):
+        Scalar(0).atan2(0)
+    with pytest.raises(UndefinedValueError):
+        (Scalar.pi() / 2).tan()
+
+
+def test_evaluating_where_an_expression_is_undefined() -> None:
+    with pytest.raises(UndefinedValueError, match="q = 0"):
+        (q.sin() / q).evaluate({"q": 0})

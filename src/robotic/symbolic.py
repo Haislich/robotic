@@ -72,6 +72,15 @@ class Symbolic[K: (Scalar, Expression)](_Incomparable, ABC):
 
     __slots__ = ()
 
+    @override
+    def __reduce__(self) -> tuple[object, tuple[type[Self]], object]:
+        """Rebuild for `copy` and `pickle` from the stored fields, not the constructor.
+
+        Returns:
+            The instance factory, its class and the stored fields.
+        """
+        return object.__new__, (type(self),), self.__getstate__()
+
     @abstractmethod
     def simplify(self) -> Self:
         """Simplify every scalar of the quantity.
@@ -394,8 +403,10 @@ class Scalar(_Value["Scalar"]):
 
     Arithmetic accepts a constant or an `int` on either side and gives a constant;
     with an expression it gives an expression. A `float` is rejected, so every value
-    stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`). Constants compare with a
-    tolerance through `is_close`.
+    stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`). A constant is always a real
+    number: an operation whose result would be undefined, infinite or complex (0/0,
+    1/0, the square root of a negative) raises `UndefinedValueError`. Constants
+    compare with a tolerance through `is_close`.
     """
 
     __slots__ = ()
@@ -422,7 +433,15 @@ class Scalar(_Value["Scalar"]):
 
     @override
     def _of(self, expression: sympy.Expr) -> Scalar:
+        if not Scalar._is_real_number(expression):
+            raise UndefinedValueError(str(expression))
         return Scalar._wrap(expression)
+
+    @staticmethod
+    def _is_real_number(expression: sympy.Expr) -> bool:
+        return not expression.has(
+            sympy.nan, sympy.zoo, sympy.oo, sympy.S.NegativeInfinity, sympy.I
+        )
 
     @override
     def _accepts(self, other: object) -> bool:
@@ -531,6 +550,8 @@ class Expression(_Value["Expression"]):
         Raises:
             TypeError: A name is not a string or a value is not exact.
             MissingParameterError: A symbol has no value.
+            UndefinedValueError: The values make the expression undefined, infinite
+                or complex.
         """
         given = {} if values is None else values
         for name, value in given.items():
@@ -547,7 +568,10 @@ class Expression(_Value["Expression"]):
             sympy.Symbol(name, real=True): Expression._expression_of(value)
             for name, value in given.items()
         }
-        return Scalar._wrap(self._expression.xreplace(substitution))
+        value = self._expression.xreplace(substitution)
+        if not Scalar._is_real_number(value):
+            raise UndefinedValueError(str(value), given)
+        return Scalar._wrap(value)
 
     @override
     def simplify(self) -> Self:
@@ -608,7 +632,12 @@ class _Constants:
         given = tuple(values)
         constants = tuple(value for value in given if not isinstance(value, Expression))
         if len(constants) == len(given):
-            return _Constants(tuple(Scalar(value) for value in constants))
+            return _Constants(
+                tuple(
+                    value if isinstance(value, Scalar) else Scalar(value)
+                    for value in constants
+                )
+            )
         return _Expressions.of(given)
 
 
@@ -625,7 +654,12 @@ class _Expressions:
         Returns:
             The expressions.
         """
-        return _Expressions(tuple(Expression(value) for value in values))
+        return _Expressions(
+            tuple(
+                value if isinstance(value, Expression) else Expression(value)
+                for value in values
+            )
+        )
 
 
 class MissingParameterError(ValueError):
@@ -647,6 +681,25 @@ class MissingParameterError(ValueError):
             super().__init__(f"no value given for {listed}")
         else:
             super().__init__(f"{parameters.__name__} has no field for {listed}")
+
+
+class UndefinedValueError(ArithmeticError):
+    """A constant would not be a real number: undefined, infinite or complex."""
+
+    def __init__(
+        self, value: str, values: Mapping[str, ScalarLike] | None = None
+    ) -> None:
+        """Name the value obtained, and the values substituted if any.
+
+        Args:
+            value: The value obtained, as printed.
+            values: The values substituted, when evaluating.
+        """
+        message = f"{value} is not a real number"
+        if values is not None:
+            listed = ", ".join(f"{name} = {values[name]}" for name in sorted(values))
+            message = f"{message} at {listed}"
+        super().__init__(message)
 
 
 class ParameterTypeError(TypeError):

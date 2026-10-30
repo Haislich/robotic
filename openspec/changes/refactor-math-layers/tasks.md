@@ -126,6 +126,18 @@ From the user's decision of 2026-10-30 (design D5): `simplify` runs only when th
 - [x] 14.3 Update tests, `docs/`, `README.md` and `exams/2024_09_19.ipynb` where they expect a simplified form, calling `.simplify()` explicitly; verify `tests/test_docs.py` passes and the notebook runs top to bottom with the same values
 - [x] 14.4 Verify the whole change as in 8.2
 
+## 15. Review round 7
+
+From `/code-review 08fef31..HEAD` (2026-10-30) and the user's decisions of the same day (design D38). Findings #1, #2 and #4 (constants within the tolerance of zero) are kept, recorded in D38.
+
+- [x] 15.1 Constants are real numbers (design D38): add `UndefinedValueError(ArithmeticError)`, exported; every computed constant and every `evaluate` result is checked for `nan`, `zoo`, `oo`, `-oo` and `I`, and `evaluate` names the values substituted; verify the scalar scenarios "Constants are real numbers" and the rotation scenario "Evaluating at a singular configuration raises" fail first, then pass
+- [x] 15.2 `copy.copy` and `copy.deepcopy` work on every composite value again (finding #6: broken by the `__new__` constructors of round 5); verify a test copying a position, displacement, direction, free axis, rotation, transform and axis-angle result fails first, then passes, and `pickle` still round-trips
+- [x] 15.3 `Direction.evaluate` returns a `Direction` without normalizing again (finding #7); verify the evaluated axis of `Rz(q)` at `q = 1` holds no square root and is typed `Direction[Scalar, F]`, failing first
+- [x] 15.4 Frame-mismatch messages share one wording across `geometry.py`, `rotation.py` and `transform.py`, the checks staying in each method (design D35; finding #8); verify a test of the `add`, `dot` and `cross` messages fails first, then passes, and the 14 frame-mismatch fixture lines still raise
+- [x] 15.5 Operations whose operands have the same kind store their components without re-checking and re-wrapping them, if it stays simple; otherwise record why not in D38 (finding #9); verify the full test suite
+- [x] 15.6 Document `UndefinedValueError` in `docs/scalar.md` and `docs/rotation.md`; verify `tests/test_docs.py` passes
+- [x] 15.7 Verify the whole change as in 8.2
+
 ## Workflow follow-up
 
 - Archive the change after reconciling the diff with the proposal and design, per `openspec/config.yaml`.
