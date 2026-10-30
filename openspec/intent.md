@@ -90,6 +90,8 @@ Recorded 2026-10-27, after the code review of review round 4.
 
 > "Lcos(θ) è una cosa che viene usata sempre, ma cosa ritorna cos(θ)? Potremmo spendere ore a pensare a questa cosa, ma il ritorno diventa marginale e toglie importanza ai veri concetti chiave."
 
+- Complex values are not supported: a computation that produces one (the square root of a negative constant) is outside the contract, and what follows is not promised.
+
 ## Open on purpose
 
 - Singular configurations in compiled code (a normalized vector or an axis evaluated where its norm vanishes): whether they raise, carry a validity flag, or are caught by a debug mode. The contract promises no behavior here until the use is clear.
