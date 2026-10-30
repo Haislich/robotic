@@ -3,7 +3,8 @@
 ^A T_B maps positions expressed in the source B to the target A. It is an element of
 SE(3), the homogeneous matrix [R p; 0 0 0 1] of the rotation ^A R_B, whose fourth
 column is the translation: the position of B's origin in A. On a position it is R p + t; on a
-displacement it is R v, because a translation does not move a displacement.
+displacement it is R v, because a translation does not move a displacement. Like a
+rotation, it is constant only when its rotation and its translation both are.
 
 ## A planar 2R arm, end to end
 
@@ -11,15 +12,15 @@ Two revolute joints about z, links of length l1 and l2. Frame `Link1` turns by q
 the base; frame `Tool` turns by q2 at the end of the first link.
 
 ```python
->>> from robotic import Frame, Rotation, Scalar, Transform
+>>> from robotic import Frame, Rotation, Symbol
 >>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
 >>> class Link1(Frame, notation="1"):
 ...     """Frame moving with the first link."""
 >>> class Tool(Frame, notation="2"):
 ...     """Frame moving with the second link."""
->>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
->>> l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
+>>> q1, q2 = Symbol("q1"), Symbol("q2")
+>>> l1, l2 = Symbol("l1"), Symbol("l2")
 
 ```
 

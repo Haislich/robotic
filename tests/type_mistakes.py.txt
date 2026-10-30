@@ -14,7 +14,7 @@ Every other line must be ty-clean and run without raising.
 import math
 from dataclasses import dataclass
 
-from robotic import Direction, Displacement, Frame, Rotation, Scalar, Transform
+from robotic import Direction, Displacement, Frame, Position, Rotation, Scalar, Symbol, Transform
 
 
 class Base(Frame):
@@ -52,7 +52,7 @@ class Parameters:
     q1: float
 
 
-q1 = Scalar.symbol("q1")
+q1 = Symbol("q1")
 tip = Tool.position(1, 0, 0)
 approach = Tool.displacement(1, 0, 0)
 base_link1 = Rotation.about_z(q1, target=Base, source=Link1)
@@ -61,6 +61,12 @@ base_prime = Rotation.about_z(q1, target=Base, source=Prime)
 second_tool = Rotation.about_x(q1, target=Second, source=Tool)
 compiled_tip = tip.compile(Parameters)
 compiled_tip_result = compiled_tip(Parameters(q1=0.5))
+
+
+def needs_a_variable(variable: Symbol) -> Symbol:
+    """A function that needs a variable, as a derivative will."""
+    return variable
+
 
 q1 + "a"  # mistake: not a number
 q1 + 0.1  # mistake: a float is not exact
@@ -71,11 +77,11 @@ tip + tip  # mistake: position plus position
 approach * approach  # mistake: a displacement times a displacement
 Tool.displacement(1, 0, 0) + Base.displacement(1, 0, 0)  # mistake: mixing frames
 tip - Base.origin()  # mistake: position minus position of another frame
-approach_in_base: Displacement[Base] = approach  # static only: widening a bound value
-approach_anywhere: Displacement[Frame] = approach  # static only: widening a bound value to Frame
-widened: Displacement[Frame] = Tool.displacement(1, 0, 0)  # known miss: explicit inline widening
+approach_in_base: Displacement[Scalar, Base] = approach  # static only: widening a bound value
+approach_anywhere: Displacement[Scalar, Frame] = approach  # static only: widening a bound value to Frame
+widened: Displacement[Scalar, Frame] = Tool.displacement(1, 0, 0)  # known miss: explicit inline widening
 widened + Base.displacement(1, 0, 0)  # mistake: the widened value is in Tool
-v1: Displacement[B2] = Displacement(0, 0, 1, B1)  # static only: annotated in a frame it is not in
+v1: Displacement[Scalar, B2] = Displacement(0, 0, 1, B1)  # static only: annotated in a frame it is not in
 v2 = Displacement(0, 0, 1, B2)
 v1 + v2  # runtime only: v1 holds B1, whatever its annotation
 v2 + v1  # runtime only: v1 holds B1, whatever its annotation
@@ -89,6 +95,8 @@ Rotation.about_z(q1, target=Base, source=Link1) @ Base.displacement(1, 0, 0)  # 
 base_link1 @ Link1.position(1, 0, 0)  # mistake: a rotation does not act on positions
 base_prime @ second_tool  # mistake: skipped intermediate frame
 Rotation.about_axis(Base.direction(0, 0, 1), q1, target=Base)  # mistake: the axis fixes the reference frame
+base_link1.to_axis_angle(free_axis=Link1.direction(1, 0, 0))  # mistake: the free axis is resolved in Base
+base_link1.to_axis_angle(free_axis=Base.displacement(1, 0, 0))  # mistake: the free axis is a direction
 base_link1.entry(0, 2)  # mistake: entries are counted from 1
 base_link1.entry(4, 1)  # mistake: a rotation has three rows
 base_link1.entry(1, int("3"))  # static only: an int index is not a valid entry index
@@ -104,6 +112,16 @@ base_link1_pose @ base_link1_pose  # mistake: chain Base<-Link1 then Base<-Link1
 base_link1_pose.entry(5, 1)  # mistake: a transform has four rows
 compiled_tip(0.5)  # mistake: values must be a Parameters
 compiled_tip(Parameters())  # mistake: missing q1
+Scalar.symbol("q")  # mistake: a symbol is created by Symbol(name)
+q1.is_close(0)  # mistake: an expression has no tolerance comparison
+Scalar(1).is_close(q1)  # mistake: is_close compares constants; evaluate the expression first
+q1.evaluate({"q1": 0.5})  # mistake: evaluation takes exact values
+base_link1.compile()  # mistake: a symbolic quantity compiles against a parameters dataclass
+q1.compile(Parameters(q1=0.5))  # mistake: compile takes the parameters class, not an instance
+base_link1.to_axis_angle(free_axis=Base.direction(q1, 1, 0))  # mistake: the free axis is a constant direction
+needs_a_variable(q1 + 1)  # static only: a variable is required, not an expression
+constant_tip: Position[Scalar, Base] = Base.position(0, 0, q1)  # static only: a symbolic position annotated constant
+constant_tip.x.is_close(0)  # runtime only: its components are expressions, whatever its annotation
 q1 == q1  # runtime only: symbolic values have no equality
 hash(q1)  # runtime only: symbolic values have no hash
 bool(q1)  # runtime only: a symbolic value is neither true nor false

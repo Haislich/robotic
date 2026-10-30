@@ -11,7 +11,7 @@ A rotation SHALL carry its target frame A and source frame B in its type (^A R_B
 
 #### Scenario: Elementary rotation
 - **WHEN** the code builds the rotation about z by `q1` from `Link1` to `Base`
-- **THEN** the type checker infers a rotation from `Link1` to `Base`, and its entries are `[[cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1]]`
+- **THEN** the type checker infers a symbolic rotation from `Link1` to `Base`, and its entries are `[[cos(q1), -sin(q1), 0], [sin(q1), cos(q1), 0], [0, 0, 1]]`
 
 ### Requirement: Entries are counted from 1
 A rotation SHALL expose each entry by row and column counted from 1, as the course writes r₁₃, and an index outside 1 to 3 SHALL be a type error.
@@ -89,11 +89,14 @@ Applying a rotation to a point SHALL be a type error, because a rotation relates
 - **AND** executing it raises an error naming the mistake
 
 ### Requirement: Axis-angle extraction is symbolic
-Extracting axis-angle from ^A R_B SHALL return, without evaluating any symbol, two axis-angle solutions with the angle in (−π, π]; each axis SHALL be a unit vector satisfying R r = r, so it has the same components in A and B. A rotation whose simplified entries contain no symbol SHALL be resolved exactly as the regular, half-turn or identity case; a rotation with at least one symbol SHALL get the regular formulas, with no condition attached, whatever values the symbols will take.
+Extracting axis-angle from ^A R_B SHALL return, without evaluating any symbol, two axis-angle solutions with the angle in (−π, π]; each axis SHALL be a unit vector satisfying R r = r, so it has the same components in A and B.
 
 #### Scenario: Regular case
 - **WHEN** the code extracts axis-angle from the rotation about z by π/3
 - **THEN** the first solution is axis (0, 0, 1) with angle π/3 and the second is axis (0, 0, −1) with angle −π/3
+
+### Requirement: Constant rotations are resolved, symbolic ones get the regular formulas
+A constant rotation SHALL be resolved as the regular, half-turn or identity case, deciding on its values with the default tolerance; a symbolic rotation SHALL get the regular formulas, with no condition attached, and SHALL never raise because of them. Where those formulas break, the axis is undefined (open on purpose).
 
 #### Scenario: Symbolic rotation
 - **WHEN** the code extracts axis-angle from the rotation about z by a symbol `q`
@@ -108,11 +111,19 @@ For a rotation by π, the two solutions SHALL be (r, π) and (−r, π).
 
 #### Scenario: Symbolic product that is the identity
 - **WHEN** the code extracts axis-angle from `R @ R.inverse()`, where `R` is the rotation about x by a symbol `q`
+- **THEN** the product is a symbolic rotation, the regular formulas apply, and no error is raised
+
+#### Scenario: Evaluating first gives the exact case
+- **WHEN** the code evaluates `R @ R.inverse()` with `q` set to 1 and extracts axis-angle
 - **THEN** the solutions are the free axis (0, 0, 1) with angle 0 and (0, 0, −1) with angle 0
 
 #### Scenario: Half turn about a symbolic axis
 - **WHEN** the code extracts axis-angle from the rotation by π about the normalized vector (a, 1, 0)
-- **THEN** the regular formulas apply, because the rotation contains a symbol, and normalizing its skew part, identically zero, raises as for any zero vector
+- **THEN** the regular formulas apply, because the rotation is symbolic, and no error is raised, although its skew part vanishes for every `a`
+
+#### Scenario: Constant half turn about z
+- **WHEN** the code extracts axis-angle from the constant rotation about z by π
+- **THEN** the solutions are axis (0, 0, 1) with angle π and axis (0, 0, −1) with angle π
 
 ### Requirement: Identity gives a free axis
 For the identity rotation, the two solutions SHALL be (a, 0) and (−a, 0), where a is a free axis that is a unit vector, z unless the caller chooses another.

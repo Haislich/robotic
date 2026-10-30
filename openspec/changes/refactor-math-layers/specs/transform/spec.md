@@ -20,6 +20,10 @@ A transform ^A T_B SHALL carry both frames in its type, SHALL be an element of S
 ### Requirement: A transform is the homogeneous matrix of a rotation
 A transform SHALL be built only as the homogeneous matrix of a rotation, given its translation, the origin of the source as a position in the target; without a translation the origins SHALL coincide. A position not in the target, or a displacement, given as the translation SHALL be a type error, also when written inline.
 
+#### Scenario: A symbolic translation makes a symbolic transform
+- **WHEN** the code takes the homogeneous matrix of the constant identity from `Link1` to `Base` with the translation (0, 0, d1), `d1` a symbol
+- **THEN** the type checker infers a symbolic transform from `Link1` to `Base`
+
 #### Scenario: Coincident origins
 - **WHEN** the code takes the homogeneous matrix of the identity from `Link1` to `Base` without a translation
 - **THEN** the type checker infers a transform from `Link1` to `Base`, and its entries are those of the 4x4 identity
@@ -73,7 +77,7 @@ Applying a transform to a point or vector not in its source frame SHALL be a typ
 #### Scenario: Point in the wrong frame
 - **WHEN** a transform from `Link1` to `Base` is applied to a point in `Tool`
 - **THEN** the type checker reports an error
-- **AND** executing it raises an error naming the mistake
+- **AND** executing it raises an error naming the transform, the point and both frames, not the rotation or displacement it is computed through
 
 ### Requirement: LaTeX and simplification for transforms
 A transform SHALL provide simplification keeping both frames, and a LaTeX rendering of ^A T_B.

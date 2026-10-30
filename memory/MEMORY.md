@@ -1,4 +1,4 @@
-- [Refactor state](refactor-design-state.md) — rounds 1-3 applied; 2026-10-26 review: revise it against openspec/intent.md next
+- [Refactor state](refactor-design-state.md) — D38 (Scalar/Expression/Symbol + kind parameter) applied 2026-10-30, 74/74 tasks, uncommitted; round 6 applied, 78/78, uncommitted; ask commit, then archive
 - [Fix algorithm bugs in the refactor](algorithm-bugs-are-users-job.md) — user reversed "keep the bugs"; fix them, name each fix
 - [Functional style, few free functions, wise dicts/tuples](no-free-functions-tuples-dicts.md) — methods on immutable types; dicts only for truly dynamic keys
 - [Narrow types, Protocols, no asserts](narrow-types-protocols-no-asserts.md) — type system does the narrowing, never assert
@@ -10,3 +10,4 @@
 - [JAX decisions are delegated](jax-decisions-delegated.md) — origin of CLAUDE.md Roles: implementation choices are Claude's, with context
 - [Memory always current](memory-always-current.md) — update memory/ and the handoff as things change; user switches PCs
 - [stratchpad/ is the user's](stratchpad-is-users.md) — user's spot-probe folder; never edit it; its ruff/ty findings are the user's
+- [Never simplify implicitly](never-simplify-implicitly.md) — simplify only on explicit user call; costly, form only

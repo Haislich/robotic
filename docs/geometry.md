@@ -7,7 +7,7 @@ keyword, because the exam numbers its frames (^0, ^3') and a class cannot be cal
 `0`; without the keyword the class name is used.
 
 ```python
->>> from robotic import Frame, Scalar
+>>> from robotic import Expression, Frame, Scalar, Symbol
 >>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
 >>> class Hand(Frame):
@@ -34,8 +34,9 @@ Position[Hand](0, 0, 0)
 
 `Point` is another name for `Position`, the same class.
 
-The frame is part of the type: `Hand.displacement(1, 0, 0)` is a `Displacement[Hand]`,
-and adding it to a `Displacement[Base]` is a type error before anything runs. If the
+The frame is part of the type: `Hand.displacement(1, 0, 0)` is a
+`Displacement[Scalar, Hand]`, and adding it to a displacement in `Base` is a type
+error before anything runs. If the
 type checker is ignored, the frames stored in the values raise at the operation:
 
 ```python
@@ -43,6 +44,24 @@ type checker is ignored, the frames stored in the values raise at the operation:
 Traceback (most recent call last):
 ...
 robotic.geometry.FrameMismatchError: cannot add Displacement[Hand] and Displacement[Base]: frame Base where Hand is expected
+
+```
+
+## Constant or symbolic
+
+The first type parameter says whether the numbers are fixed. A position or
+displacement is constant, `[Scalar, F]`, when every number is a constant, and symbolic,
+`[Expression, F]`, as soon as one is built from a symbol; then every component is an
+expression, constant ones included. `evaluate` substitutes exact values and gives the
+constant one back:
+
+```python
+>>> q = Symbol("q")
+>>> tip = Hand.position(1, 2, q)
+>>> isinstance(tip.x, Expression)
+True
+>>> tip.evaluate({"q": 3})
+Position[Hand](1, 2, 3)
 
 ```
 
@@ -119,24 +138,38 @@ Displacement[Hand](0, 0, 1)
 
 A direction is a displacement of length one. It is always a normalization: written
 from components, `Hand.direction(x, y, z)` divides them by their norm; computed,
-`d.normalize()` does the same. No square root is left where none is needed.
+`d.normalize()` does the same. The norm is not simplified; call `.simplify()` for the
+compact form.
 
 ```python
 >>> Hand.direction(3, 4, 0)
 Direction[Hand](3/5, 4/5, 0)
->>> q = Scalar.symbol("q")
->>> Hand.displacement(q.cos(), q.sin(), 0).normalize()
+>>> heading = Hand.displacement(q.cos(), q.sin(), 0).normalize()
+>>> heading
+Direction[Hand](cos(q)/sqrt(sin(q)**2 + cos(q)**2), sin(q)/sqrt(sin(q)**2 + cos(q)**2), 0)
+>>> heading.simplify()
 Direction[Hand](cos(q), sin(q), 0)
 
 ```
 
-The zero displacement has no direction, so normalizing it raises:
+A constant displacement whose norm is zero, within the tolerance of `Scalar.is_close`,
+has no direction, so normalizing it raises:
 
 ```python
 >>> Hand.direction(0, 0, 0)
 Traceback (most recent call last):
 ...
 robotic.geometry.ZeroVectorError: cannot normalize the zero vector Displacement[Hand](0, 0, 0)
+
+```
+
+A symbolic displacement never raises: its norm may vanish at some configurations, or
+at all of them, and the library does not decide which. There the direction is
+undefined, as at any singular configuration:
+
+```python
+>>> Hand.displacement(q, 0, 0).normalize()
+Direction[Hand](q/Abs(q), 0, 0)
 
 ```
 

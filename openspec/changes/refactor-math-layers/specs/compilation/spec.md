@@ -7,7 +7,24 @@ Turns a symbolic quantity into a fast JAX function of a user-written parameters 
 ## ADDED Requirements
 
 ### Requirement: Compiling against a parameters dataclass
-Every quantity (scalar, point, vector, rotation, transform) SHALL compile, given a dataclass type whose fields name the symbols, to a callable that takes one instance of that dataclass; fields are matched to symbols by name, their order is irrelevant, and fields without a matching symbol are allowed.
+Every symbolic quantity (expression, point, vector, rotation, transform, axis-angle result) SHALL compile, given a dataclass type whose fields name the symbols, to a callable that takes one instance of that dataclass; fields are matched to symbols by name, their order is irrelevant, and fields without a matching symbol are allowed.
+
+#### Scenario: An instance instead of the class
+- **WHEN** a quantity is compiled against an instance of the parameters dataclass instead of the class
+- **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
+
+### Requirement: Constants compile without parameters
+Every constant quantity SHALL compile with no argument directly to its compiled result; compiling a symbolic quantity with no argument SHALL be a type error and SHALL raise.
+
+#### Scenario: Constant position
+- **WHEN** the constant position (1, 2, 2) in `Base` is compiled with no argument
+- **THEN** the result is the compiled position with components (1.0, 2.0, 2.0) in `Base`
+
+#### Scenario: Symbolic quantity without parameters
+- **WHEN** the rotation about z by a symbol `q` is compiled with no argument
+- **THEN** the type checker reports an error
+- **AND** executing it raises an error naming the mistake
 
 #### Scenario: One parameters class for the whole robot
 - **WHEN** the tip of a planar 2R arm (symbols q1, q2, l1, l2) is compiled against a dataclass with fields q1, q2, l1, l2 and a fifth unused field

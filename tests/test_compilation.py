@@ -18,6 +18,7 @@ from robotic import (
     AxisAngleSolutions,
     Compiled,
     Displacement,
+    Expression,
     Frame,
     MissingParameterError,
     Numeric,
@@ -26,6 +27,7 @@ from robotic import (
     Position,
     Rotation,
     Scalar,
+    Symbol,
     Transform,
 )
 from tests.stringified import Stringified
@@ -84,15 +86,15 @@ class Misannotated:
     q1: str
 
 
-q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
-l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
+q1, q2 = Symbol("q1"), Symbol("q2")
+l1, l2 = Symbol("l1"), Symbol("l2")
 ARM = Arm(q1=0.5, q2=0.1, l1=1.0, l2=0.5, unused=7.0)
 ANGLES = st.floats(min_value=-math.pi, max_value=math.pi)
 GRADIENT_AT_HALF = 0.8775825618903728
 COMPILE_SECONDS = 5
 
 
-def planar_arm() -> Transform[Base, Tool]:
+def planar_arm() -> Transform[Expression, Base, Tool]:
     base_link1 = Rotation.about_z(q1, target=Base, source=Link1).homogeneous()
     link1_tool = Rotation.about_z(q2, target=Link1, source=Tool).homogeneous(
         Link1.position(l1, 0, 0)
@@ -100,11 +102,11 @@ def planar_arm() -> Transform[Base, Tool]:
     return base_link1 @ link1_tool
 
 
-def tip() -> Position[Base]:
+def tip() -> Position[Expression, Base]:
     return (planar_arm() @ Tool.position(l2, 0, 0)).simplify()
 
 
-def substituted(scalar: Scalar, values: dict[str, float]) -> float:
+def substituted(scalar: Scalar | Expression, values: dict[str, float]) -> float:
     expression = sympy.sympify(str(scalar))
     bindings: dict[sympy.Basic | complex, sympy.Basic | complex] = {
         sympy.Symbol(name): value for name, value in values.items()
@@ -114,7 +116,7 @@ def substituted(scalar: Scalar, values: dict[str, float]) -> float:
 
 def test_one_parameters_class_for_the_whole_robot() -> None:
     compiled = tip().compile(Arm)
-    assert_type(compiled, Compiled[Arm, Position[Base]])
+    assert_type(compiled, Compiled[Arm, Position[Expression, Base]])
     expected = [
         1.0 * math.cos(0.5) + 0.5 * math.cos(0.6),
         math.sin(0.5) + 0.5 * math.sin(0.6),
@@ -164,7 +166,7 @@ def test_natural_shapes_in_double_precision() -> None:
 
 def test_compiled_point_keeps_its_frame() -> None:
     result = tip().compile(Arm)(ARM)
-    assert_type(result, Numeric[Position[Base]])
+    assert_type(result, Numeric[Position[Expression, Base]])
     assert_type(result.components, jax.Array)
     assert repr(result).startswith("Numeric[Position[Base]]([")
 
@@ -174,7 +176,13 @@ def test_constants_compile() -> None:
     np.testing.assert_allclose(np.asarray(result.components), [1.0, 0.0, math.pi])
 
 
-def sine_vector() -> Compiled[Batch, Displacement[Base]]:
+def test_a_constant_compiles_without_parameters() -> None:
+    result = Base.position(1, 2, 2).compile()
+    assert_type(result, Numeric[Position[Scalar, Base]])
+    assert repr(result) == "Numeric[Position[Base]]([1.0, 2.0, 2.0])"
+
+
+def sine_vector() -> Compiled[Batch, Displacement[Expression, Base]]:
     return Base.displacement(q1.sin(), 0, 0).compile(Batch)
 
 
@@ -182,7 +190,7 @@ def sine_x(value: jax.typing.ArrayLike) -> jax.Array:
     return sine_vector()(Batch(q1=value)).components[0]
 
 
-def sine_at(value: jax.typing.ArrayLike) -> Numeric[Displacement[Base]]:
+def sine_at(value: jax.typing.ArrayLike) -> Numeric[Displacement[Expression, Base]]:
     return sine_vector()(Batch(q1=value))
 
 
@@ -215,7 +223,7 @@ def test_array_passed_directly() -> None:
 def test_array_batched_with_vmap() -> None:
     compiled = Rotation.about_z(q1, target=Base, source=Tool).compile(Batch)
 
-    def at(value: jax.typing.ArrayLike) -> Numeric[Rotation[Base, Tool]]:
+    def at(value: jax.typing.ArrayLike) -> Numeric[Rotation[Expression, Base, Tool]]:
         return compiled(Batch(q1=value))
 
     assert jax.vmap(at)(jnp.array([0.1, 0.2])).components.shape == (2, 3, 3)
@@ -225,7 +233,7 @@ def test_gradient() -> None:
     assert float(jax.grad(sine_x)(0.5)) == pytest.approx(GRADIENT_AT_HALF, rel=1e-15)
 
 
-def solutions_at(value: float) -> Numeric[AxisAngleSolutions[Base]]:
+def solutions_at(value: float) -> Numeric[AxisAngleSolutions[Expression, Base]]:
     rotation = Rotation.about_z(q1, target=Base, source=Tool)
     return rotation.to_axis_angle().compile(Joint)(Joint(q1=value))
 

@@ -3,10 +3,12 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal, final, overload, override
 
-from robotic.geometry import Displacement, Frame, Position
-from robotic.symbolic import Layout, Scalar, Symbolic
+from robotic.geometry import Displacement, Frame, FrameMismatchError, Position
+from robotic.symbolic import Expression, Layout, Scalar, ScalarLike, Symbolic
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from robotic.rotation import Rotation
 
 type Index4 = Literal[1, 2, 3, 4]
@@ -16,28 +18,28 @@ _HOMOGENEOUS: Final = 4
 
 
 @dataclass(frozen=True, eq=False)
-class _Parts[Target: Frame, Source: Frame]:
-    """A rotation and its translation, checked by `Rotation.homogeneous`."""
+class _Parts[K: (Scalar, Expression), Target: Frame, Source: Frame]:
+    """A rotation and its translation of one kind, checked by `Rotation.homogeneous`."""
 
-    rotation: Rotation[Target, Source]
-    translation: Position[Target]
+    rotation: Rotation[K, Target, Source]
+    translation: Position[K, Target]
 
 
 @final
-class Transform[Target: Frame, Source: Frame](Symbolic):
+class Transform[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K]):
     """The transform ^A T_B = [R p; 0 1]: maps positions in B to the target A.
 
     It is the rotation ^A R_B and the translation, the origin of B as a position in A,
     vector p is the fourth column. On a position it is R p + t, on a displacement
-    R v. Built only as `rotation.homogeneous(translation)`.
+    R v. Built only as `rotation.homogeneous(translation)`; constant when both are.
     """
 
     __slots__ = ("_rotation", "_translation")
 
-    _rotation: Rotation[Target, Source]
-    _translation: Position[Target]
+    _rotation: Rotation[K, Target, Source]
+    _translation: Position[K, Target]
 
-    def __init__(self, parts: _Parts[Target, Source]) -> None:
+    def __init__(self, parts: _Parts[K, Target, Source]) -> None:
         """Assemble the parts given by `Rotation.homogeneous`, the only spelling.
 
         Args:
@@ -56,16 +58,16 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         self._translation = parts.translation
 
     @property
-    def rotation(self) -> Rotation[Target, Source]:
+    def rotation(self) -> Rotation[K, Target, Source]:
         """The rotation ^A R_B."""
         return self._rotation
 
     @property
-    def translation(self) -> Position[Target]:
+    def translation(self) -> Position[K, Target]:
         """The translation: the origin of B as a position in A."""
         return self._translation
 
-    def entry(self, row: Index4, column: Index4) -> Scalar:
+    def entry(self, row: Index4, column: Index4) -> K:
         """The entry of the 4x4 homogeneous matrix, counted from 1.
 
         Returns:
@@ -80,10 +82,11 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
                 f"transform entries are counted from 1 to 4, not ({row}, {column})"
             )
             raise IndexError(message)
+        translation = self._translation
         if row == _HOMOGENEOUS:
-            return Scalar(1 if column == _HOMOGENEOUS else 0)
+            zero = translation.x * 0
+            return zero + 1 if column == _HOMOGENEOUS else zero
         if column == _HOMOGENEOUS:
-            translation = self._translation
             return (translation.x, translation.y, translation.z)[row - 1]
         return self._rotation.entry(row, column)
 
@@ -93,39 +96,92 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
 
     @overload
     def __matmul__[Inner: Frame](
-        self, other: Transform[Source, Inner]
-    ) -> Transform[Target, Inner]: ...
+        self, other: Transform[K, Source, Inner]
+    ) -> Transform[K, Target, Inner]: ...
 
     @overload
-    def __matmul__(self, other: Position[Source]) -> Position[Target]: ...
+    def __matmul__[Inner: Frame](
+        self,
+        other: Transform[Scalar, Source, Inner] | Transform[Expression, Source, Inner],
+    ) -> Transform[Expression, Target, Inner]: ...
 
     @overload
-    def __matmul__(self, other: Displacement[Source]) -> Displacement[Target]: ...
+    def __matmul__(self, other: Position[K, Source]) -> Position[K, Target]: ...
+
+    @overload
+    def __matmul__(
+        self, other: Position[Scalar, Source] | Position[Expression, Source]
+    ) -> Position[Expression, Target]: ...
+
+    @overload
+    def __matmul__(self, other: Displacement[K, Source]) -> Displacement[K, Target]: ...
+
+    @overload
+    def __matmul__(
+        self, other: Displacement[Scalar, Source] | Displacement[Expression, Source]
+    ) -> Displacement[Expression, Target]: ...
 
     def __matmul__[Inner: Frame](
-        self, other: Transform[Source, Inner] | Position[Source] | Displacement[Source]
-    ) -> Transform[Target, Inner] | Position[Target] | Displacement[Target]:
+        self,
+        other: Transform[Scalar, Source, Inner]
+        | Transform[Expression, Source, Inner]
+        | Position[Scalar, Source]
+        | Position[Expression, Source]
+        | Displacement[Scalar, Source]
+        | Displacement[Expression, Source],
+    ) -> (
+        Transform[Scalar, Target, Inner]
+        | Transform[Expression, Target, Inner]
+        | Position[Scalar, Target]
+        | Position[Expression, Target]
+        | Displacement[Scalar, Target]
+        | Displacement[Expression, Target]
+    ):
         """Compose with ^B T_C, or resolve in A a position or displacement given in B.
 
         Returns:
             ^A T_C = (R1 R2, origin of C resolved in A) for a transform; R p + t for
             a position; R v for a displacement.
+
+        Raises:
+            FrameMismatchError: The operand is not in the source frame.
         """
+        source = self._rotation.source
         match other:
             case Transform():
-                return Transform(
-                    _Parts(self._rotation @ other.rotation, self @ other.translation)
-                )
+                if other.rotation.target is not source:
+                    operation = f"compose {self._kind()} with {other._kind()}"
+                    raise FrameMismatchError(operation, source, other.rotation.target)
+                rotation = self._rotation @ other.rotation
+                return rotation.homogeneous(self @ other.translation)
             case Position():
+                if other.frame is not source:
+                    operation = f"apply {self._kind()} to {other!r}"
+                    raise FrameMismatchError(operation, source, other.frame)
                 return self._translation + self._rotation @ (
                     other - other.frame.origin()
                 )
             case Displacement():
+                if other.frame is not source:
+                    operation = f"apply {self._kind()} to {other!r}"
+                    raise FrameMismatchError(operation, source, other.frame)
                 return self._rotation @ other
             case _:
                 return NotImplemented
 
-    def inverse(self) -> Transform[Source, Target]:
+    @overload
+    def inverse(
+        self: Transform[Scalar, Target, Source],
+    ) -> Transform[Scalar, Source, Target]: ...
+
+    @overload
+    def inverse(
+        self: Transform[Expression, Target, Source],
+    ) -> Transform[Expression, Source, Target]: ...
+
+    def inverse(
+        self: Transform[Scalar, Target, Source] | Transform[Expression, Target, Source],
+    ) -> Transform[Scalar, Source, Target] | Transform[Expression, Source, Target]:
         """The inverse ^B T_A: rotation R^T, translation the origin of A resolved in B.
 
         Returns:
@@ -133,18 +189,32 @@ class Transform[Target: Frame, Source: Frame](Symbolic):
         """
         inverse = self._rotation.inverse()
         back = inverse @ (self._rotation.target.origin() - self._translation)
-        return Transform(_Parts(inverse, inverse.target.origin() + back))
+        return inverse.homogeneous(inverse.target.origin() + back)
+
+    def evaluate(
+        self: Transform[Expression, Target, Source],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> Transform[Scalar, Target, Source]:
+        """Substitute exact values for the symbols.
+
+        Args:
+            values: The value of each symbol, by name; values for symbols that do not
+                occur are allowed.
+
+        Returns:
+            The constant transform, between the same frames.
+        """
+        rotation = self._rotation.evaluate(values)
+        return rotation.homogeneous(self._translation.evaluate(values))
 
     @override
-    def simplify(self) -> Transform[Target, Source]:
+    def simplify(self) -> Transform[K, Target, Source]:
         """Simplify the rotation and the translation.
 
         Returns:
             The same transform, between the same frames, simplified.
         """
-        return Transform(
-            _Parts(self._rotation.simplify(), self._translation.simplify())
-        )
+        return self._rotation.simplify().homogeneous(self._translation.simplify())
 
     @override
     def latex(self) -> str:

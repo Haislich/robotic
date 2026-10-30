@@ -9,7 +9,16 @@ import numpy as np
 import pytest
 from spatialmath import SE3
 
-from robotic import Displacement, Frame, Position, Rotation, Scalar, Transform
+from robotic import (
+    Displacement,
+    Expression,
+    Frame,
+    Position,
+    Rotation,
+    Scalar,
+    Symbol,
+    Transform,
+)
 
 
 class Base(Frame, notation="0"):
@@ -34,18 +43,20 @@ class Joints:
     l2: float
 
 
-q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
-l1, l2, d1 = Scalar.symbol("l1"), Scalar.symbol("l2"), Scalar.symbol("d1")
+q1, q2 = Symbol("q1"), Symbol("q2")
+l1, l2, d1 = Symbol("l1"), Symbol("l2"), Symbol("d1")
 INDICES = (1, 2, 3, 4)
 
 
-def entries[A: Frame, B: Frame](transform: Transform[A, B]) -> list[list[str]]:
+def entries[K: (Scalar, Expression), A: Frame, B: Frame](
+    transform: Transform[K, A, B],
+) -> list[list[str]]:
     return [
         [str(transform.entry(row, column)) for column in INDICES] for row in INDICES
     ]
 
 
-def planar_arm() -> Transform[Base, Tool]:
+def planar_arm() -> Transform[Expression, Base, Tool]:
     base_link1 = Rotation.about_z(q1, target=Base, source=Link1).homogeneous()
     link1_tool = Rotation.about_z(q2, target=Link1, source=Tool).homogeneous(
         Link1.position(l1, 0, 0)
@@ -53,7 +64,7 @@ def planar_arm() -> Transform[Base, Tool]:
     return base_link1 @ link1_tool
 
 
-def base_link1_lifted() -> Transform[Base, Link1]:
+def base_link1_lifted() -> Transform[Expression, Base, Link1]:
     rotation = Rotation.about_z(q1, target=Base, source=Link1)
     return rotation.homogeneous(Base.position(0, 0, d1))
 
@@ -69,20 +80,20 @@ def test_matrix_layout() -> None:
 
 def test_reading_the_translation_from_the_entries() -> None:
     transform = base_link1_lifted()
-    assert_type(transform.entry(3, 4), Scalar)
+    assert_type(transform.entry(3, 4), Expression)
     assert str(transform.entry(3, 4)) == "d1"
 
 
 def test_rotation_and_translation_are_its_parts() -> None:
     transform = base_link1_lifted()
-    assert_type(transform.rotation, Rotation[Base, Link1])
-    assert_type(transform.translation, Position[Base])
+    assert_type(transform.rotation, Rotation[Expression, Base, Link1])
+    assert_type(transform.translation, Position[Expression, Base])
     assert repr(transform.translation) == "Position[Base](0, 0, d1)"
 
 
 def test_coincident_origins() -> None:
     transform = Rotation.identity(target=Base, source=Link1).homogeneous()
-    assert_type(transform, Transform[Base, Link1])
+    assert_type(transform, Transform[Scalar, Base, Link1])
     assert entries(transform) == [
         ["1", "0", "0", "0"],
         ["0", "1", "0", "0"],
@@ -99,12 +110,12 @@ def test_taking_the_homogeneous_matrix_leaves_the_rotation_unchanged() -> None:
 
 
 def test_forward_kinematics_chain() -> None:
-    assert_type(planar_arm(), Transform[Base, Tool])
+    assert_type(planar_arm(), Transform[Expression, Base, Tool])
 
 
 def test_inverse_composes_to_identity() -> None:
     transform = planar_arm()
-    assert_type(transform.inverse(), Transform[Tool, Base])
+    assert_type(transform.inverse(), Transform[Expression, Tool, Base])
     assert entries((transform @ transform.inverse()).simplify()) == [
         ["1", "0", "0", "0"],
         ["0", "1", "0", "0"],
@@ -115,7 +126,7 @@ def test_inverse_composes_to_identity() -> None:
 
 def test_tip_of_a_planar_2r_arm() -> None:
     tip = (planar_arm() @ Tool.position(l2, 0, 0)).simplify()
-    assert_type(tip, Position[Base])
+    assert_type(tip, Position[Expression, Base])
     assert repr(tip) == (
         "Position[Base](l1*cos(q1) + l2*cos(q1 + q2), l1*sin(q1) + l2*sin(q1 + q2), 0)"
     )
@@ -126,7 +137,7 @@ def test_translation_does_not_move_a_displacement() -> None:
         Base.position(5, 0, 0)
     )
     moved = transform @ Tool.displacement(1, 0, 0)
-    assert_type(moved, Displacement[Base])
+    assert_type(moved, Displacement[Scalar, Base])
     assert repr(moved) == "Displacement[Base](1, 0, 0)"
     assert repr(transform @ Tool.position(1, 0, 0)) == "Position[Base](6, 0, 0)"
 
@@ -138,8 +149,24 @@ def test_a_transform_rejects_another_operand_at_runtime() -> None:
         )
 
 
+def test_a_point_in_the_wrong_frame_names_the_transform_and_the_point() -> None:
+    with pytest.raises(
+        TypeError, match=r"apply Transform\[Base, Link1\] to Position\[Tool\]"
+    ):
+        operator.matmul(base_link1_lifted(), Tool.position(1, 0, 0))
+
+
+def test_a_symbolic_translation_makes_a_symbolic_transform() -> None:
+    identity = Rotation.identity(target=Base, source=Link1)
+    assert_type(identity, Rotation[Scalar, Base, Link1])
+    transform = identity.homogeneous(Base.position(0, 0, d1))
+    assert_type(transform, Transform[Expression, Base, Link1])
+    assert_type(transform.rotation, Rotation[Expression, Base, Link1])
+    assert isinstance(transform.rotation.entry(1, 1), Expression)
+
+
 def test_simplify_keeps_frames() -> None:
-    assert_type(planar_arm().simplify(), Transform[Base, Tool])
+    assert_type(planar_arm().simplify(), Transform[Expression, Base, Tool])
 
 
 def test_latex_names_both_frames() -> None:

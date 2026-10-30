@@ -6,7 +6,7 @@ context: |
   Roles). CLAUDE.md is the working contract and applies to every artifact.
   Robotics algorithms are implemented by hand in src/; roboticstoolbox and
   spatialmath are test-only oracles.
-  openspec/intent.md holds the user's intentions for the library (I0-I7), in
+  openspec/intent.md holds the user's intentions for the library (I0-I8), in
   their words. Read it before writing any artifact; it outranks design
   decisions, and a decision that contradicts it is a deviation.
 

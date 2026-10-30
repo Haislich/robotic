@@ -76,6 +76,14 @@ Verbosity is accepted when no other way makes the mathematics equally explicit. 
 
 > "Se si potesse migliorare mi farebbe piacere, ma non a scapito dell'espressibilità."
 
+## I8. Symbolic values are undetermined until their values are fixed
+
+Equality and zero have meaning only where the values are numerically defined. Until then, the symbolic side is in a normal, honest indeterminacy: it does not decide whether something is zero or whether two things are equal, because no proof method is guaranteed in every case, and an answer that is "probably true until proven otherwise" can fail at the worst moment, during an exam.
+
+> "L'uguaglianza ha senso solo nel contesto in cui i valori sono numericamente definiti. Fintanto che io non fisso i valori mi trovo senza mezzi termini in una situazione di indeterminazione normale e onesta."
+
+Recorded 2026-10-27, after the code review of review round 4.
+
 ## Declared limits
 
 - Scalars are dimensionless: angles and lengths are both scalars; the type does not tell them apart. This limit is permanent, because introducing quantity types later would change the contract.

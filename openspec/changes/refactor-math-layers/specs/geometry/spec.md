@@ -65,7 +65,7 @@ Every binary operation between points and vectors SHALL require both operands in
 - **AND** executing the assignment does not raise (an annotation is not checked at runtime), and the first operation between it and a vector in `Base` raises an error naming both frames
 
 #### Scenario: A value in the wrong frame keeps its own frame
-- **WHEN** `v1: Vector[B2] = Vector(0, 0, 1, B1)`, `v2 = Vector(0, 0, 1, B2)`, and the code computes `v1 + v2`, `v2 + v1` and `v1 + v1`
+- **WHEN** `v1: Displacement[Scalar, B2] = Displacement(0, 0, 1, B1)`, `v2 = Displacement(0, 0, 1, B2)`, and the code computes `v1 + v2`, `v2 + v1` and `v1 + v1`
 - **THEN** the type checker reports the assignment of `v1`
 - **AND** `v1 + v2` and `v2 + v1` raise an error naming `B1` and `B2`, and `v1 + v1` is the vector (0, 0, 2) in `B1`
 
@@ -81,22 +81,31 @@ A vector SHALL provide the dot product and the cross product with a vector in th
 - **THEN** the result is the scalar `5`
 
 ### Requirement: Unit vectors come only from normalization
-Every unit vector SHALL be the normalization of a vector: building a unit vector from a vector SHALL divide its components by their simplified norm, and no way of building a unit vector SHALL accept components without normalizing them.
+Every unit vector SHALL be the normalization of a vector: building a unit vector from a vector SHALL divide its components by their norm, not simplified, and no way of building a unit vector SHALL accept components without normalizing them.
 
 #### Scenario: Building a unit vector normalizes
 - **WHEN** the code builds a unit vector from the vector (3, 4, 0) in `Tool`
 - **THEN** the result is the unit vector (3/5, 4/5, 0) in `Tool`
 
-#### Scenario: Simplified norm
+#### Scenario: The norm is not simplified
 - **WHEN** the code normalizes the vector (cos(q), sin(q), 0)
-- **THEN** the result is (cos(q), sin(q), 0), with no square root left in the components
+- **THEN** the components are cos(q)/√(sin²(q) + cos²(q)), sin(q)/√(sin²(q) + cos²(q)) and 0
+- **AND** simplifying the result gives (cos(q), sin(q), 0)
 
-### Requirement: Normalizing a zero vector raises
-Normalizing a vector whose components simplify to zero SHALL raise an error, because no direction exists.
+### Requirement: Normalizing a constant zero vector raises
+Normalizing a constant vector whose norm is within the default tolerance of zero SHALL raise an error, because no direction exists. Normalizing a symbolic vector SHALL never raise; where its norm vanishes, at some configurations or at all, the direction is undefined (open on purpose, see the proposal's Out of Scope).
 
 #### Scenario: Zero vector
-- **WHEN** the code normalizes the vector (0, 0, 0)
+- **WHEN** the code normalizes the constant vector (0, 0, 0)
 - **THEN** an error is raised
+
+#### Scenario: A norm that vanishes at one configuration
+- **WHEN** `q` is a symbol and the code normalizes the vector (q, 0, 0)
+- **THEN** no error is raised and the result is (q/|q|, 0, 0)
+
+#### Scenario: A symbolic zero
+- **WHEN** `q` is a symbol and the code normalizes the vector ((q + 1)² − q² − 2q − 1, 0, 0)
+- **THEN** no error is raised: the vector is symbolic, so the library does not decide that its norm is zero
 
 ### Requirement: Simplification and LaTeX for points and vectors
 A point or vector SHALL provide simplification returning the same type in the same frame, and a LaTeX rendering that names its frame by the notation declared with the frame, or by the frame's class name when none is declared.

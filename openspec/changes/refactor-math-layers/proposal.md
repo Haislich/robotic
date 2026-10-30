@@ -4,11 +4,13 @@
 
 The legacy library (`src/robotic/transformations.py`, `manipulator.py`, `utils.py`) is buggy (3 of 22 tests fail), fails the project checks (420 ruff errors, 85 ty diagnostics), and its types do not say what a value means: a 3-vector carries no frame, sympy values flow untyped through every signature, and numeric and symbolic paths are separate code. This change replaces its mathematical foundation with layers whose code reads like a handwritten exam solution, where the type checker rejects frame mistakes and affine mistakes before anything runs.
 
+Serves every intention of `openspec/intent.md` (I0-I8); design.md names the one each decision serves.
+
 ## What Changes
 
 - **BREAKING**: delete the legacy library and its tests; tag the last legacy commit `41d2833` first so the old code stays reachable.
 - **BREAKING**: delete the five midterm notebooks (`midterms/midterm_2020-11-20.ipynb` ... `midterm_2024-11-22.ipynb`); keep `exams/2024_09_19.ipynb` as the running example.
-- New scalar layer: a typed class wrapping sympy expressions. sympy is the only algebra; no public signature takes or returns a sympy type, and sympy imports are banned outside the boundary modules.
+- New scalar layer: typed classes wrapping sympy expressions, `Scalar` for constants and `Expression` (with `Symbol`, a variable) for values built from symbols; every quantity carries which of the two it is in its type, constants compare with a tolerance, and expressions become constants only by substituting exact values (intent I8). sympy is the only algebra; no public signature takes or returns a sympy type, and sympy imports are banned outside the boundary modules.
 - New geometry layer: frames as types; points and vectors resolved in a frame, with affine arithmetic enforced by the type checker.
 - New rotation layer: `Rotation[Target, Source]`, composition, inverse, elementary rotations, action on vectors, symbolic axis-angle extraction following the course convention.
 - New transform layer: `Transform[Target, Source]`, an element of SE(3) built as the homogeneous matrix of a rotation with the source's origin, composition, inverse, action on points and vectors.
@@ -20,7 +22,7 @@ The legacy library (`src/robotic/transformations.py`, `manipulator.py`, `utils.p
 
 ### New Capabilities
 
-- `scalar`: the typed scalar wrapping sympy expressions, symbol creation, exact constants, float policy, sympy confinement.
+- `scalar`: constants and expressions wrapping sympy, symbol creation, exact constants, float policy, constant or symbolic in the type, tolerance comparison of constants, evaluation, sympy confinement.
 - `geometry`: frames, points and vectors resolved in a frame, affine arithmetic, vector algebra.
 - `rotation`: rotations between frames, their composition and action on vectors, axis-angle extraction.
 - `transform`: homogeneous transformations between frames and their action on points and vectors.
@@ -46,6 +48,6 @@ None. `openspec/specs/` is empty.
 - Euler angles and RPY (deferred to their own change; design D24).
 - Numeric backends other than JAX.
 - Static tracking of which symbols an expression contains.
-- Simplifying the skew norm of axis-angle once instead of twice (design D33, open point).
-- Singular configurations in compiled code (an axis compiled alone, a normalized vector whose norm vanishes at some configuration): whether they raise, carry a validity flag, or are caught by a debug mode. Open on purpose (`openspec/intent.md`); this change promises no value there, not even `nan`. The flagged path of axis-angle (design D28) is unaffected.
+- Singular configurations (an axis compiled alone, a symbolic direction whose norm vanishes at some or all configurations): whether they raise, carry a validity flag, or are caught by a debug mode. Open on purpose (`openspec/intent.md`); this change promises no value there, not even `nan`, though sympy may print `nan` symbolically where it evaluates a norm to zero itself (design D13, D38).
+- Tolerance comparison of composite constants (positions, rotations, transforms), beside `Scalar.is_close`: no use yet (design D38).
 - The ast-grep style-rule change (separate, small, planned), including a ban on identifiers ending in a single `_` (keyword escapes such as `from_`).

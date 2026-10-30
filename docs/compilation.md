@@ -1,9 +1,10 @@
 # Compilation
 
 Numbers come only from compiling a quantity whose frame of resolution is already
-chosen symbolically. `compile` turns any quantity (scalar, position, displacement,
-rotation, transform) into a JIT-compiled JAX function of a parameters dataclass you
-write. The expressions are compiled as written, without simplifying them; repeated
+chosen symbolically. `compile` turns any symbolic quantity (expression, position,
+displacement, rotation, transform, axis-angle solutions) into a JIT-compiled JAX
+function of a parameters dataclass you write; a constant compiles with no parameters,
+straight to its value. The expressions are compiled as written, without simplifying them; repeated
 subexpressions are computed once, so long chains compile quickly.
 
 ## The parameters dataclass
@@ -13,7 +14,7 @@ matched to symbols by name; order is irrelevant and extra fields are allowed.
 
 ```python
 >>> from dataclasses import dataclass
->>> from robotic import Frame, Rotation, Scalar, Transform
+>>> from robotic import Frame, Rotation, Scalar, Symbol
 >>> class Base(Frame, notation="0"):
 ...     """Fixed frame at the first joint."""
 >>> class Link1(Frame, notation="1"):
@@ -27,8 +28,8 @@ matched to symbols by name; order is irrelevant and extra fields are allowed.
 ...     q2: float
 ...     l1: float
 ...     l2: float
->>> q1, q2 = Scalar.symbol("q1"), Scalar.symbol("q2")
->>> l1, l2 = Scalar.symbol("l1"), Scalar.symbol("l2")
+>>> q1, q2 = Symbol("q1"), Symbol("q2")
+>>> l1, l2 = Symbol("l1"), Symbol("l2")
 >>> base_tool = Rotation.about_z(q1, target=Base, source=Link1).homogeneous() @ (
 ...     Rotation.about_z(q2, target=Link1, source=Tool).homogeneous(
 ...         Link1.position(l1, 0, 0)
@@ -69,6 +70,20 @@ True
 
 Calling with anything but an `Arm`, or building an `Arm` without a field, is a type
 error, and raises when executed.
+
+## Constants
+
+A constant has nothing to vary, so it compiles with no parameters and gives its value
+directly. The value is the nearest double; the exact one stays symbolic.
+
+```python
+>>> Base.position(1, 2, Scalar(2).sqrt()).compile()
+Numeric[Position[Base]]([1.0, 2.0, 1.4142135623730951])
+
+```
+
+A symbolic quantity compiled without parameters is a type error, and raises when
+executed.
 
 ## Validation, once, at compile time
 
@@ -171,4 +186,5 @@ row per solution, columns r_x, r_y, r_z, θ.
 For a symbolic rotation these are the regular formulas, which break where sin θ = 0
 (θ = 0 and θ = π). What a compiled function returns there is not decided yet: the
 library promises no value at singular configurations. When exact values are known,
-`to_axis_angle` on the exact rotation recognizes the identity and the half turn.
+evaluate the rotation first: `to_axis_angle` on the constant rotation recognizes the
+identity and the half turn.

@@ -13,11 +13,12 @@ from robotic import (
     AxisAngleSolutions,
     Direction,
     Displacement,
+    Expression,
     Frame,
     FreeAxis,
     Rotation,
     Scalar,
-    ZeroVectorError,
+    Symbol,
 )
 
 
@@ -48,24 +49,26 @@ class Joint:
     q: float
 
 
-q = Scalar.symbol("q")
-q1 = Scalar.symbol("q1")
+q = Symbol("q")
+q1 = Symbol("q1")
 pi = Scalar.pi()
 INDICES = (1, 2, 3)
 SAMPLES = (-math.pi + 1e-6, -1.2, -1e-6, 0.0, 1e-6, 0.7, math.pi / 2, math.pi - 1e-6)
 
 
-def entries[A: Frame, B: Frame](rotation: Rotation[A, B]) -> list[list[str]]:
+def entries[K: (Scalar, Expression), A: Frame, B: Frame](
+    rotation: Rotation[K, A, B],
+) -> list[list[str]]:
     return [[str(rotation.entry(row, column)) for column in INDICES] for row in INDICES]
 
 
-def numbers(rotation: Rotation[Base, Tool], value: float) -> np.ndarray:
+def numbers(rotation: Rotation[Expression, Base, Tool], value: float) -> np.ndarray:
     return np.asarray(rotation.compile(Joint)(Joint(q=value)).components)
 
 
 def test_elementary_rotation() -> None:
     rotation = Rotation.about_z(q1, target=Base, source=Link1)
-    assert_type(rotation, Rotation[Base, Link1])
+    assert_type(rotation, Rotation[Expression, Base, Link1])
     assert entries(rotation) == [
         ["cos(q1)", "-sin(q1)", "0"],
         ["sin(q1)", "cos(q1)", "0"],
@@ -77,14 +80,14 @@ def test_elementary_rotation() -> None:
 
 def test_reading_r12() -> None:
     rotation = Rotation.about_z(q1, target=Base, source=Link1)
-    assert_type(rotation.entry(1, 2), Scalar)
+    assert_type(rotation.entry(1, 2), Expression)
     assert str(rotation.entry(1, 2)) == "-sin(q1)"
 
 
 def test_rotation_about_an_axis() -> None:
     axis = Base.direction(0, 0, 1)
     about_axis = Rotation.about_axis(axis, q, source=Tool)
-    assert_type(about_axis, Rotation[Base, Tool])
+    assert_type(about_axis, Rotation[Expression, Base, Tool])
     assert entries(about_axis) == entries(Rotation.about_z(q, target=Base, source=Tool))
 
 
@@ -96,21 +99,21 @@ def test_identity() -> None:
 def test_chaining() -> None:
     base_link1 = Rotation.about_z(q1, target=Base, source=Link1)
     link1_tool = Rotation.about_x(q, target=Link1, source=Tool)
-    assert_type(base_link1 @ link1_tool, Rotation[Base, Tool])
+    assert_type(base_link1 @ link1_tool, Rotation[Expression, Base, Tool])
 
 
 def test_chain_through_intermediate_frames() -> None:
     first = Rotation.about_z(q1, target=Base, source=Prime)
     second = Rotation.about_y(q, target=Prime, source=Second)
     third = Rotation.about_x(q1, target=Second, source=Tool)
-    assert_type(first @ second @ third, Rotation[Base, Tool])
+    assert_type(first @ second @ third, Rotation[Expression, Base, Tool])
 
 
 def test_inverse_composes_to_identity() -> None:
     rotation = Rotation.about_z(q1, target=Base, source=Link1) @ Rotation.about_x(
         q, target=Link1, source=Tool
     )
-    assert_type(rotation.inverse(), Rotation[Tool, Base])
+    assert_type(rotation.inverse(), Rotation[Expression, Tool, Base])
     assert entries((rotation @ rotation.inverse()).simplify()) == [
         ["1", "0", "0"],
         ["0", "1", "0"],
@@ -121,14 +124,14 @@ def test_inverse_composes_to_identity() -> None:
 def test_resolving_in_the_target_frame() -> None:
     rotation = Rotation.about_z(pi / 2, target=Base, source=Tool)
     resolved = rotation @ Tool.displacement(1, 0, 0)
-    assert_type(resolved, Displacement[Base])
+    assert_type(resolved, Displacement[Scalar, Base])
     assert repr(resolved) == "Displacement[Base](0, 1, 0)"
 
 
 def test_regular_case() -> None:
     solutions = Rotation.about_z(pi / 3, target=Base, source=Tool).to_axis_angle()
-    assert_type(solutions, AxisAngleSolutions[Base])
-    assert_type(solutions.first.axis, Direction[Base])
+    assert_type(solutions, AxisAngleSolutions[Scalar, Base])
+    assert_type(solutions.first.axis, Direction[Scalar, Base])
     assert repr(solutions.first.axis) == "Direction[Base](0, 0, 1)"
     assert str(solutions.first.angle) == "pi/3"
     assert repr(solutions.second.axis) == "Direction[Base](0, 0, -1)"
@@ -145,17 +148,26 @@ def test_symbolic_rotation() -> None:
 
 def test_symbolic_product_that_is_the_identity() -> None:
     rotation = Rotation.about_x(q, target=Base, source=Tool)
-    solutions = (rotation @ rotation.inverse()).to_axis_angle()
+    product = rotation @ rotation.inverse()
+    assert_type(product, Rotation[Expression, Base, Base])
+    solutions = product.to_axis_angle()
+    assert_type(solutions, AxisAngleSolutions[Expression, Base])
+    assert not isinstance(solutions.first.axis, FreeAxis)
+
+
+def test_evaluating_first_gives_the_exact_case() -> None:
+    rotation = Rotation.about_x(q, target=Base, source=Tool)
+    solutions = (rotation @ rotation.inverse()).evaluate({"q": 1}).to_axis_angle()
     assert repr(solutions.first.axis) == "FreeAxis[Base](0, 0, 1)"
     assert str(solutions.first.angle) == "0"
     assert repr(solutions.second.axis) == "FreeAxis[Base](0, 0, -1)"
 
 
-def test_the_users_monster_is_the_identity() -> None:
+def test_the_users_monster_is_the_identity_once_evaluated() -> None:
     rz = Rotation.about_z(q, target=Base, source=Tool)
     rx = Rotation.about_x(q, target=Tool, source=Base)
     monster = rz @ rx @ rz @ rx @ rx.inverse() @ rz.inverse() @ rx.inverse()
-    solutions = (monster @ rz.inverse()).to_axis_angle()
+    solutions = (monster @ rz.inverse()).evaluate({"q": 1}).to_axis_angle()
     assert repr(solutions.first.axis) == "FreeAxis[Base](0, 0, 1)"
 
 
@@ -167,11 +179,18 @@ def test_half_turn_about_x() -> None:
     assert str(solutions.second.angle) == "pi"
 
 
-def test_half_turn_about_a_symbolic_axis_raises() -> None:
-    a = Scalar.symbol("a")
+def test_half_turn_about_a_symbolic_axis_does_not_raise() -> None:
+    a = Symbol("a")
     rotation = Rotation.about_axis(Base.direction(a, 1, 0), pi, source=Tool)
-    with pytest.raises(ZeroVectorError):
-        rotation.to_axis_angle()
+    assert_type(rotation.to_axis_angle(), AxisAngleSolutions[Expression, Base])
+
+
+def test_constant_half_turn_about_z() -> None:
+    solutions = Rotation.about_z(pi, target=Base, source=Tool).to_axis_angle()
+    assert repr(solutions.first.axis) == "Direction[Base](0, 0, 1)"
+    assert str(solutions.first.angle) == "pi"
+    assert repr(solutions.second.axis) == "Direction[Base](0, 0, -1)"
+    assert str(solutions.second.angle) == "pi"
 
 
 def test_default_free_axis() -> None:
@@ -200,7 +219,7 @@ def test_a_rotation_rejects_a_point_at_runtime() -> None:
 
 def test_simplify_keeps_frames() -> None:
     rotation = Rotation.about_z(q, target=Base, source=Tool)
-    assert_type(rotation.simplify(), Rotation[Base, Tool])
+    assert_type(rotation.simplify(), Rotation[Expression, Base, Tool])
 
 
 def test_latex_names_both_frames() -> None:
@@ -240,3 +259,9 @@ def test_axis_angle_matches_the_oracle(value: float) -> None:
     oracle_angle, _ = SO3(expected).angvec()
     assert angle == pytest.approx(oracle_angle, abs=1e-3)
     assert angle == pytest.approx(value, abs=1e-9)
+
+
+def test_solutions_evaluated_at_a_singular_configuration_are_undefined() -> None:
+    solutions = Rotation.about_z(q, target=Base, source=Tool).to_axis_angle()
+    evaluated = solutions.evaluate({"q": 0})
+    assert repr(evaluated.first.axis) == "Direction[Base](nan, nan, nan)"

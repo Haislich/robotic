@@ -1,7 +1,7 @@
 """Rotations between frames, ^A R_B, and their symbolic axis-angle solutions."""
 
 from dataclasses import dataclass
-from typing import Literal, Self, final, overload, override
+from typing import TYPE_CHECKING, Literal, Self, TypeIs, final, overload, override
 
 from robotic.geometry import (
     Direction,
@@ -12,62 +12,46 @@ from robotic.geometry import (
     Position,
 )
 from robotic.symbolic import (
+    Expression,
     Layout,
     Scalar,
     ScalarLike,
     Symbolic,
-    _has_symbols,
+    _Constants,
+    _Expressions,
     _Incomparable,
-    _is_zero,
 )
 from robotic.transform import Transform, _Parts
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
 
 type Index3 = Literal[1, 2, 3]
 
 _INDICES: tuple[Index3, ...] = (1, 2, 3)
 
 
-class _Matrix3:
-    """Nine scalars, row-major: the storage of a rotation, without frames."""
+class _Matrix3[K: (Scalar, Expression)]:
+    """Nine scalars of one kind, row-major: a rotation's storage, without frames."""
 
     __slots__ = ("_entries",)
 
-    def __init__(self, entries: tuple[ScalarLike, ...]) -> None:
-        self._entries = tuple(Scalar(entry) for entry in entries)
+    def __init__(self, entries: tuple[K, ...]) -> None:
+        self._entries = entries
 
     @property
-    def entries(self) -> tuple[Scalar, ...]:
+    def entries(self) -> tuple[K, ...]:
         return self._entries
 
-    def entry(self, row: Index3, column: Index3) -> Scalar:
+    def entry(self, row: Index3, column: Index3) -> K:
         return self._entries[3 * (row - 1) + column - 1]
 
-    def __matmul__(self, other: _Matrix3) -> _Matrix3:
-        return _Matrix3(
-            tuple(
-                self.entry(row, 1) * other.entry(1, column)
-                + self.entry(row, 2) * other.entry(2, column)
-                + self.entry(row, 3) * other.entry(3, column)
-                for row in _INDICES
-                for column in _INDICES
-            )
-        )
-
-    def column_product(
-        self, x: Scalar, y: Scalar, z: Scalar
-    ) -> tuple[Scalar, Scalar, Scalar]:
-        first, second, third = (
-            self.entry(row, 1) * x + self.entry(row, 2) * y + self.entry(row, 3) * z
-            for row in _INDICES
-        )
-        return first, second, third
-
-    def transpose(self) -> _Matrix3:
+    def transpose(self) -> _Matrix3[K]:
         return _Matrix3(
             tuple(self.entry(column, row) for row in _INDICES for column in _INDICES)
         )
 
-    def simplify(self) -> _Matrix3:
+    def simplify(self) -> _Matrix3[K]:
         return _Matrix3(tuple(entry.simplify() for entry in self._entries))
 
     def rows(self) -> str:
@@ -77,11 +61,16 @@ class _Matrix3:
         )
 
 
-_IDENTITY = _Matrix3((1, 0, 0, 0, 1, 0, 0, 0, 1))
+_IDENTITY = _Matrix3(tuple(Scalar(entry) for entry in (1, 0, 0, 0, 1, 0, 0, 0, 1)))
+
+type _AnyRotation[A: Frame, B: Frame] = (
+    Rotation[Scalar, A, B] | Rotation[Expression, A, B]
+)
+type _AnyPosition[A: Frame] = Position[Scalar, A] | Position[Expression, A]
 
 
 @dataclass(frozen=True, eq=False)
-class AxisAngle[F: Frame](_Incomparable):
+class AxisAngle[K: (Scalar, Expression), F: Frame](_Incomparable):
     """One axis-angle representation: a rotation by `angle` about `axis`.
 
     Attributes:
@@ -89,22 +78,21 @@ class AxisAngle[F: Frame](_Incomparable):
         angle: The angle in radians, in (-pi, pi].
     """
 
-    axis: Direction[F]
-    angle: Scalar
+    axis: Direction[K, F]
+    angle: K
 
 
-class AxisAngleSolutions[F: Frame](Symbolic):
+class AxisAngleSolutions[K: (Scalar, Expression), F: Frame](Symbolic[K]):
     """The two axis-angle solutions of a rotation.
 
     Course convention: regular case (r, theta) and (-r, -theta); half turn (r, pi) and
-    (-r, pi); identity (a, 0) and (-a, 0) with a free axis a. For a rotation with a
-    symbol, the regular formulas, wherever they hold; nothing predicts where they
-    break.
+    (-r, pi); identity (a, 0) and (-a, 0) with a free axis a. For a symbolic rotation,
+    the regular formulas, wherever they hold; nothing predicts where they break.
     """
 
     __slots__ = ("_first", "_second")
 
-    def __init__(self, first: AxisAngle[F], second: AxisAngle[F]) -> None:
+    def __init__(self, first: AxisAngle[K, F], second: AxisAngle[K, F]) -> None:
         """Pair the two solutions.
 
         Args:
@@ -115,12 +103,12 @@ class AxisAngleSolutions[F: Frame](Symbolic):
         self._second = second
 
     @property
-    def first(self) -> AxisAngle[F]:
+    def first(self) -> AxisAngle[K, F]:
         """The solution with the angle in [0, pi]."""
         return self._first
 
     @property
-    def second(self) -> AxisAngle[F]:
+    def second(self) -> AxisAngle[K, F]:
         """The solution with the opposite axis."""
         return self._second
 
@@ -134,6 +122,29 @@ class AxisAngleSolutions[F: Frame](Symbolic):
         return type(self)(
             AxisAngle(self._first.axis.simplify(), self._first.angle.simplify()),
             AxisAngle(self._second.axis.simplify(), self._second.angle.simplify()),
+        )
+
+    def evaluate(
+        self: AxisAngleSolutions[Expression, F],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> AxisAngleSolutions[Scalar, F]:
+        """Substitute exact values for the symbols.
+
+        Args:
+            values: The value of each symbol, by name; values for symbols that do not
+                occur are allowed.
+
+        Returns:
+            The constant solutions.
+        """
+        first, second = self._first, self._second
+        return AxisAngleSolutions(
+            AxisAngle(
+                Direction(first.axis.evaluate(values)), first.angle.evaluate(values)
+            ),
+            AxisAngle(
+                Direction(second.axis.evaluate(values)), second.angle.evaluate(values)
+            ),
         )
 
     @override
@@ -182,22 +193,41 @@ class AxisAngleSolutions[F: Frame](Symbolic):
 
 
 @final
-class Rotation[Target: Frame, Source: Frame](Symbolic):
+class Rotation[K: (Scalar, Expression), Target: Frame, Source: Frame](Symbolic[K]):
     """The rotation ^A R_B: maps coordinates expressed in the source B to the target A.
 
     Its columns are the axes of B resolved in A, so `R @ v` resolves in A an arrow
-    given in B.
+    given in B. It is constant (`Rotation[Scalar, A, B]`) when built from constants
+    only, and symbolic (`Rotation[Expression, A, B]`) otherwise.
     """
 
     __slots__ = ("_matrix", "_source", "_target")
 
     _target: type[Target]
     _source: type[Source]
-    _matrix: _Matrix3
+    _matrix: _Matrix3[K]
 
-    def __init__(
-        self, axis: Direction[Target], angle: ScalarLike, *, source: type[Source]
-    ) -> None:
+    @overload
+    def __new__[A: Frame, B: Frame](
+        cls, axis: Direction[Scalar, A], angle: ScalarLike, *, source: type[B]
+    ) -> Rotation[Scalar, A, B]: ...
+
+    @overload
+    def __new__[A: Frame, B: Frame](
+        cls,
+        axis: Direction[Scalar, A] | Direction[Expression, A],
+        angle: ScalarLike | Expression,
+        *,
+        source: type[B],
+    ) -> Rotation[Expression, A, B]: ...
+
+    def __new__[A: Frame, B: Frame](
+        cls,
+        axis: Direction[Scalar, A] | Direction[Expression, A],
+        angle: ScalarLike | Expression,
+        *,
+        source: type[B],
+    ) -> _AnyRotation[A, B]:
         """The rotation by `angle` about `axis` (Rodrigues); spelled `about_axis`.
 
         Args:
@@ -205,19 +235,22 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
             angle: The angle in radians, positive counterclockwise about the axis.
             source: The frame B of ^A R_B.
 
+        Returns:
+            ^A R_B; constant when the axis and the angle are.
+
         Raises:
             TypeError: The axis is not a direction.
         """
         if not isinstance(axis, Direction):
             message = f"a rotation's axis is a direction, not {axis!r}"
             raise TypeError(message)
-        Rotation._require_frame(source)
-        cosine, sine = Scalar(angle).cos(), Scalar(angle).sin()
+        value = Rotation._value(angle)
+        cosine, sine = value.cos(), value.sin()
         versine = 1 - cosine
         x, y, z = axis.x, axis.y, axis.z
-        self._target = axis.frame
-        self._source = source
-        self._matrix = _Matrix3(
+        return Rotation._of_entries(
+            axis.frame,
+            source,
             (
                 cosine + x * x * versine,
                 x * y * versine - z * sine,
@@ -228,8 +261,12 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
                 x * z * versine - y * sine,
                 y * z * versine + x * sine,
                 cosine + z * z * versine,
-            )
+            ),
         )
+
+    @staticmethod
+    def _value(angle: ScalarLike | Expression) -> Scalar | Expression:
+        return _Constants.or_expressions((angle,)).values[0]
 
     @staticmethod
     def _require_frame(value: object) -> None:
@@ -237,27 +274,51 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
             message = f"expected a frame, a subclass of Frame, not {value!r}"
             raise TypeError(message)
 
-    @staticmethod
-    def _same_frame(operation: str, expected: type[Frame], found: type[Frame]) -> None:
-        if found is not expected:
-            raise FrameMismatchError(operation, expected, found)
-
     @classmethod
-    def _of_matrix[A: Frame, B: Frame](
-        cls, target: type[A], source: type[B], matrix: _Matrix3
-    ) -> Rotation[A, B]:
+    def _of_matrix[J: (Scalar, Expression), A: Frame, B: Frame](
+        cls, target: type[A], source: type[B], matrix: _Matrix3[J]
+    ) -> Rotation[J, A, B]:
         Rotation._require_frame(target)
         Rotation._require_frame(source)
-        rotation: Rotation[A, B] = object.__new__(Rotation)
+        rotation: Rotation[J, A, B] = object.__new__(Rotation)
         rotation._target = target
         rotation._source = source
         rotation._matrix = matrix
         return rotation
 
     @classmethod
+    def _of_entries[A: Frame, B: Frame](
+        cls,
+        target: type[A],
+        source: type[B],
+        entries: Iterable[ScalarLike | Expression],
+    ) -> _AnyRotation[A, B]:
+        match _Constants.or_expressions(entries):
+            case _Constants(values):
+                return cls._of_matrix(target, source, _Matrix3(values))
+            case _Expressions(values):
+                return cls._of_matrix(target, source, _Matrix3(values))
+
+    @staticmethod
+    def _is_constant[A: Frame, B: Frame](
+        rotation: _AnyRotation[A, B],
+    ) -> TypeIs[Rotation[Scalar, A, B]]:
+        return isinstance(rotation.entry(1, 1), Scalar)
+
+    @staticmethod
+    def _is_constant_position[A: Frame](
+        position: _AnyPosition[A],
+    ) -> TypeIs[Position[Scalar, A]]:
+        return isinstance(position.x, Scalar)
+
+    def _promoted(self) -> Rotation[Expression, Target, Source]:
+        entries = _Expressions.of(self._matrix.entries).values
+        return self._of_matrix(self._target, self._source, _Matrix3(entries))
+
+    @classmethod
     def identity[A: Frame, B: Frame](
         cls, *, target: type[A], source: type[B]
-    ) -> Rotation[A, B]:
+    ) -> Rotation[Scalar, A, B]:
         """The identity: `source` has the orientation of `target`.
 
         Returns:
@@ -265,46 +326,105 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         """
         return cls._of_matrix(target, source, _IDENTITY)
 
+    @overload
     @classmethod
     def about_x[A: Frame, B: Frame](
         cls, angle: ScalarLike, *, target: type[A], source: type[B]
-    ) -> Rotation[A, B]:
+    ) -> Rotation[Scalar, A, B]: ...
+
+    @overload
+    @classmethod
+    def about_x[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> Rotation[Expression, A, B]: ...
+
+    @classmethod
+    def about_x[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> _AnyRotation[A, B]:
         """The elementary rotation about the x axis.
 
         Returns:
             ^A R_B = Rx(angle).
         """
-        c, s = Scalar(angle).cos(), Scalar(angle).sin()
-        return cls._of_matrix(target, source, _Matrix3((1, 0, 0, 0, c, -s, 0, s, c)))
+        value = Rotation._value(angle)
+        c, s = value.cos(), value.sin()
+        return cls._of_entries(target, source, (1, 0, 0, 0, c, -s, 0, s, c))
 
+    @overload
     @classmethod
     def about_y[A: Frame, B: Frame](
         cls, angle: ScalarLike, *, target: type[A], source: type[B]
-    ) -> Rotation[A, B]:
+    ) -> Rotation[Scalar, A, B]: ...
+
+    @overload
+    @classmethod
+    def about_y[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> Rotation[Expression, A, B]: ...
+
+    @classmethod
+    def about_y[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> _AnyRotation[A, B]:
         """The elementary rotation about the y axis.
 
         Returns:
             ^A R_B = Ry(angle).
         """
-        c, s = Scalar(angle).cos(), Scalar(angle).sin()
-        return cls._of_matrix(target, source, _Matrix3((c, 0, s, 0, 1, 0, -s, 0, c)))
+        value = Rotation._value(angle)
+        c, s = value.cos(), value.sin()
+        return cls._of_entries(target, source, (c, 0, s, 0, 1, 0, -s, 0, c))
 
+    @overload
     @classmethod
     def about_z[A: Frame, B: Frame](
         cls, angle: ScalarLike, *, target: type[A], source: type[B]
-    ) -> Rotation[A, B]:
+    ) -> Rotation[Scalar, A, B]: ...
+
+    @overload
+    @classmethod
+    def about_z[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> Rotation[Expression, A, B]: ...
+
+    @classmethod
+    def about_z[A: Frame, B: Frame](
+        cls, angle: ScalarLike | Expression, *, target: type[A], source: type[B]
+    ) -> _AnyRotation[A, B]:
         """The elementary rotation about the z axis.
 
         Returns:
             ^A R_B = Rz(angle).
         """
-        c, s = Scalar(angle).cos(), Scalar(angle).sin()
-        return cls._of_matrix(target, source, _Matrix3((c, -s, 0, s, c, 0, 0, 0, 1)))
+        value = Rotation._value(angle)
+        c, s = value.cos(), value.sin()
+        return cls._of_entries(target, source, (c, -s, 0, s, c, 0, 0, 0, 1))
+
+    @overload
+    @classmethod
+    def about_axis[A: Frame, B: Frame](
+        cls, axis: Direction[Scalar, A], angle: ScalarLike, *, source: type[B]
+    ) -> Rotation[Scalar, A, B]: ...
+
+    @overload
+    @classmethod
+    def about_axis[A: Frame, B: Frame](
+        cls,
+        axis: Direction[Scalar, A] | Direction[Expression, A],
+        angle: ScalarLike | Expression,
+        *,
+        source: type[B],
+    ) -> Rotation[Expression, A, B]: ...
 
     @classmethod
     def about_axis[A: Frame, B: Frame](
-        cls, axis: Direction[A], angle: ScalarLike, *, source: type[B]
-    ) -> Rotation[A, B]:
+        cls,
+        axis: Direction[Scalar, A] | Direction[Expression, A],
+        angle: ScalarLike | Expression,
+        *,
+        source: type[B],
+    ) -> _AnyRotation[A, B]:
         """The rotation by `angle` about `axis`; the axis's frame is the target.
 
         Returns:
@@ -322,7 +442,7 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         """The source frame B of ^A R_B."""
         return self._source
 
-    def entry(self, row: Index3, column: Index3) -> Scalar:
+    def entry(self, row: Index3, column: Index3) -> K:
         """The entry r_{row column}, counted from 1 as the course writes r13.
 
         Returns:
@@ -339,9 +459,20 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
     def _kind(self) -> str:
         return f"Rotation[{self._target.__name__}, {self._source.__name__}]"
 
+    @overload
     def homogeneous(
-        self, translation: Position[Target] | None = None
-    ) -> Transform[Target, Source]:
+        self, translation: Position[K, Target] | None = None
+    ) -> Transform[K, Target, Source]: ...
+
+    @overload
+    def homogeneous(
+        self, translation: _AnyPosition[Target]
+    ) -> Transform[Expression, Target, Source]: ...
+
+    def homogeneous(
+        self: _AnyRotation[Target, Source],
+        translation: _AnyPosition[Target] | None = None,
+    ) -> Transform[Scalar, Target, Source] | Transform[Expression, Target, Source]:
         """The homogeneous matrix [R p; 0 1] of this rotation: the transform ^A T_B.
 
         Args:
@@ -349,60 +480,108 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
                 the fourth column; the origin of A when omitted.
 
         Returns:
-            The transform between the same frames.
+            The transform between the same frames; constant when the rotation and the
+            translation are.
 
         Raises:
             TypeError: The translation is not a position (a displacement has no
                 place).
+            FrameMismatchError: The translation is not in the target frame.
         """
         if translation is None:
-            return Transform(_Parts(self, self._target.origin()))
+            return self._assembled(self._target.origin())
         if not isinstance(translation, Position):
             message = f"the translation is a position, not {translation!r}"
             raise TypeError(message)
-        self._same_frame(
-            f"translate {self._kind()} by {translation!r}",
-            self._target,
-            translation.frame,
-        )
+        if translation.frame is not self._target:
+            operation = f"translate {self._kind()} by {translation!r}"
+            raise FrameMismatchError(operation, self._target, translation.frame)
+        return self._assembled(translation)
+
+    def _assembled(
+        self: _AnyRotation[Target, Source], translation: _AnyPosition[Target]
+    ) -> Transform[Scalar, Target, Source] | Transform[Expression, Target, Source]:
+        if Rotation._is_constant(self):
+            if Rotation._is_constant_position(translation):
+                return Transform(_Parts(self, translation))
+            return Transform(_Parts(self._promoted(), translation))
+        if Rotation._is_constant_position(translation):
+            promoted = Position(
+                Expression(translation.x),
+                Expression(translation.y),
+                Expression(translation.z),
+                translation.frame,
+            )
+            return Transform(_Parts(self, promoted))
         return Transform(_Parts(self, translation))
 
     @overload
     def __matmul__[Inner: Frame](
-        self, other: Rotation[Source, Inner]
-    ) -> Rotation[Target, Inner]: ...
+        self, other: Rotation[K, Source, Inner]
+    ) -> Rotation[K, Target, Inner]: ...
 
     @overload
-    def __matmul__(self, other: Displacement[Source]) -> Displacement[Target]: ...
+    def __matmul__[Inner: Frame](
+        self, other: _AnyRotation[Source, Inner]
+    ) -> Rotation[Expression, Target, Inner]: ...
+
+    @overload
+    def __matmul__(self, other: Displacement[K, Source]) -> Displacement[K, Target]: ...
+
+    @overload
+    def __matmul__(
+        self, other: Displacement[Scalar, Source] | Displacement[Expression, Source]
+    ) -> Displacement[Expression, Target]: ...
 
     def __matmul__[Inner: Frame](
-        self, other: Rotation[Source, Inner] | Displacement[Source]
-    ) -> Rotation[Target, Inner] | Displacement[Target]:
+        self,
+        other: _AnyRotation[Source, Inner]
+        | Displacement[Scalar, Source]
+        | Displacement[Expression, Source],
+    ) -> (
+        _AnyRotation[Target, Inner]
+        | Displacement[Scalar, Target]
+        | Displacement[Expression, Target]
+    ):
         """Compose with ^B R_C, or resolve in A a displacement given in B.
 
         Returns:
             ^A R_C for a rotation; ^A v = ^A R_B ^B v for a displacement.
+
+        Raises:
+            FrameMismatchError: The operand is not in the source frame.
         """
         match other:
             case Rotation():
-                self._same_frame(
-                    f"compose {self._kind()} with {other._kind()}",
-                    self._source,
-                    other.target,
-                )
-                return self._of_matrix(
-                    self._target, other.source, self._matrix @ other._matrix
+                if other.target is not self._source:
+                    operation = f"compose {self._kind()} with {other._kind()}"
+                    raise FrameMismatchError(operation, self._source, other.target)
+                return self._of_entries(
+                    self._target,
+                    other.source,
+                    (
+                        self.entry(row, 1) * other.entry(1, column)
+                        + self.entry(row, 2) * other.entry(2, column)
+                        + self.entry(row, 3) * other.entry(3, column)
+                        for row in _INDICES
+                        for column in _INDICES
+                    ),
                 )
             case Displacement():
-                self._same_frame(
-                    f"apply {self._kind()} to {other!r}", self._source, other.frame
+                if other.frame is not self._source:
+                    operation = f"apply {self._kind()} to {other!r}"
+                    raise FrameMismatchError(operation, self._source, other.frame)
+                x, y, z = (
+                    self.entry(row, 1) * other.x
+                    + self.entry(row, 2) * other.y
+                    + self.entry(row, 3) * other.z
+                    for row in _INDICES
                 )
-                x, y, z = self._matrix.column_product(other.x, other.y, other.z)
                 return self._target.displacement(x, y, z)
             case _:
                 return NotImplemented
 
-    def inverse(self) -> Rotation[Source, Target]:
+    def inverse(self) -> Rotation[K, Source, Target]:
         """The inverse ^B R_A, the transpose.
 
         Returns:
@@ -410,69 +589,119 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         """
         return self._of_matrix(self._source, self._target, self._matrix.transpose())
 
-    def to_axis_angle(
-        self, free_axis: Direction[Target] | None = None
-    ) -> AxisAngleSolutions[Target]:
-        """The two axis-angle solutions, symbolic, following the course convention.
-
-        A rotation whose simplified entries contain no symbol is resolved exactly:
-        identity, half turn or regular case. A rotation with a symbol gets the regular
-        formulas, whatever values the symbols will take; if its skew part is
-        identically zero (a half turn about a symbolic axis), normalizing it raises
-        `ZeroVectorError`.
+    def evaluate(
+        self: Rotation[Expression, Target, Source],
+        values: Mapping[str, ScalarLike] | None = None,
+    ) -> Rotation[Scalar, Target, Source]:
+        """Substitute exact values for the symbols.
 
         Args:
-            free_axis: The axis reported for the identity; z of A when omitted.
+            values: The value of each symbol, by name; values for symbols that do not
+                occur are allowed.
+
+        Returns:
+            The constant rotation, between the same frames.
+        """
+        entries = tuple(entry.evaluate(values) for entry in self._matrix.entries)
+        return self._of_matrix(self._target, self._source, _Matrix3(entries))
+
+    @overload
+    def to_axis_angle(
+        self: Rotation[Scalar, Target, Source],
+        free_axis: Direction[Scalar, Target] | None = None,
+    ) -> AxisAngleSolutions[Scalar, Target]: ...
+
+    @overload
+    def to_axis_angle(
+        self: Rotation[Expression, Target, Source],
+        free_axis: Direction[Scalar, Target] | None = None,
+    ) -> AxisAngleSolutions[Expression, Target]: ...
+
+    def to_axis_angle(
+        self: _AnyRotation[Target, Source],
+        free_axis: Direction[Scalar, Target] | None = None,
+    ) -> AxisAngleSolutions[Scalar, Target] | AxisAngleSolutions[Expression, Target]:
+        """The two axis-angle solutions, symbolic, following the course convention.
+
+        A constant rotation is resolved on its values, at the default tolerance of
+        `Scalar.is_close`: identity, half turn or regular case. A symbolic rotation gets
+        the regular formulas, whatever values the symbols will take; where its skew
+        part vanishes the axis is undefined. Evaluate it first for the exact cases.
+
+        Args:
+            free_axis: The axis reported for the identity, a constant direction; z of
+                A when omitted.
 
         Returns:
             Both solutions.
 
         Raises:
-            ValueError: An exact rotation whose skew part is zero but whose trace
-                proves neither the identity nor a half turn.
+            TypeError: The free axis is not a constant direction.
+            FrameMismatchError: The free axis is not in the target frame.
         """
-        rotation = self.simplify()
-        skew = self._target.displacement(
-            rotation.entry(3, 2) - rotation.entry(2, 3),
-            rotation.entry(1, 3) - rotation.entry(3, 1),
-            rotation.entry(2, 1) - rotation.entry(1, 2),
+        if free_axis is not None:
+            if not (
+                isinstance(free_axis, Direction) and isinstance(free_axis.x, Scalar)
+            ):
+                message = f"the free axis is a constant direction, not {free_axis!r}"
+                raise TypeError(message)
+            if free_axis.frame is not self._target:
+                operation = f"take {free_axis!r} as the free axis of {self._kind()}"
+                raise FrameMismatchError(operation, self._target, free_axis.frame)
+        if Rotation._is_constant(self):
+            return Rotation._constant_solutions(self, free_axis)
+        skew, cosine, length = Rotation._skew_parts(self)
+        return Rotation._regular(skew, (length / 2).atan2(cosine))
+
+    @staticmethod
+    def _skew_parts[J: (Scalar, Expression), A: Frame, B: Frame](
+        rotation: Rotation[J, A, B],
+    ) -> tuple[Displacement[J, A], J, J]:
+        entry = rotation.entry
+        skew = rotation.target.displacement(
+            entry(3, 2) - entry(2, 3),
+            entry(1, 3) - entry(3, 1),
+            entry(2, 1) - entry(1, 2),
         )
-        cosine = (
-            rotation.entry(1, 1) + rotation.entry(2, 2) + rotation.entry(3, 3) - 1
-        ) / 2
-        length = skew.norm().simplify()
-        symbolic = any(
-            _has_symbols(rotation.entry(row, column))
-            for row in _INDICES
-            for column in _INDICES
-        )
-        if symbolic or not _is_zero(length):
-            first = AxisAngle(skew.normalize(), (length / 2).atan2(cosine))
-            return AxisAngleSolutions(first, AxisAngle(-first.axis, -first.angle))
-        if _is_zero(cosine - 1):
+        cosine = (entry(1, 1) + entry(2, 2) + entry(3, 3) - 1) / 2
+        return skew, cosine, skew.norm()
+
+    @staticmethod
+    def _regular[J: (Scalar, Expression), A: Frame](
+        skew: Displacement[J, A], angle: J
+    ) -> AxisAngleSolutions[J, A]:
+        first = AxisAngle(skew.normalize(), angle)
+        return AxisAngleSolutions(first, AxisAngle(-first.axis, -first.angle))
+
+    @staticmethod
+    def _constant_solutions[A: Frame, B: Frame](
+        rotation: Rotation[Scalar, A, B], free_axis: Direction[Scalar, A] | None
+    ) -> AxisAngleSolutions[Scalar, A]:
+        skew, cosine, length = Rotation._skew_parts(rotation)
+        if not length.is_close(0):
+            return Rotation._regular(skew, (length / 2).atan2(cosine))
+        if cosine.is_close(1):
+            target = rotation.target
             axis = FreeAxis(
-                self._target.displacement(0, 0, 1) if free_axis is None else free_axis
+                target.displacement(0, 0, 1) if free_axis is None else free_axis
             )
             return AxisAngleSolutions(
                 AxisAngle(axis, Scalar(0)), AxisAngle(-axis, Scalar(0))
             )
-        if _is_zero(cosine + 1):
-            column = next(
-                index
-                for index in _INDICES
-                if not _is_zero(rotation.entry(index, index) + 1)
-            )
-            x, y, z = (
-                rotation.entry(row, column) + _IDENTITY.entry(row, column)
-                for row in _INDICES
-            )
-            first = AxisAngle(self._target.direction(x, y, z), Scalar.pi())
-            return AxisAngleSolutions(first, AxisAngle(-first.axis, first.angle))
-        message = "cannot decide between the identity and a half turn"
-        raise ValueError(message)
+        column = next(
+            index
+            for index in _INDICES
+            if not (rotation.entry(index, index) + 1).is_close(0)
+        )
+        x, y, z = (
+            rotation.entry(row, column) + _IDENTITY.entry(row, column)
+            for row in _INDICES
+        )
+        first = AxisAngle(rotation.target.direction(x, y, z), Scalar.pi())
+        return AxisAngleSolutions(first, AxisAngle(-first.axis, first.angle))
 
     @override
-    def simplify(self) -> Rotation[Target, Source]:
+    def simplify(self) -> Rotation[K, Target, Source]:
         """Simplify every entry.
 
         Returns:
@@ -493,11 +722,7 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
 
     @override
     def _layout(self) -> Layout:
-        return Layout(
-            label=f"Rotation[{self._target.__name__}, {self._source.__name__}]",
-            entries=self._matrix.entries,
-            shape=(3, 3),
-        )
+        return Layout(label=self._kind(), entries=self._matrix.entries, shape=(3, 3))
 
     @override
     def __repr__(self) -> str:
@@ -506,5 +731,4 @@ class Rotation[Target: Frame, Source: Frame](Symbolic):
         Returns:
             E.g. `Rotation[Base, Link1]([cos(q1), -sin(q1), 0], ...)`.
         """
-        frames = f"{self._target.__name__}, {self._source.__name__}"
-        return f"Rotation[{frames}]({self._matrix.rows()})"
+        return f"{self._kind()}({self._matrix.rows()})"

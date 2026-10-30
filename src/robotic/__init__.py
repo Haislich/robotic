@@ -13,6 +13,7 @@ from robotic.geometry import (
 from robotic.rotation import AxisAngle, AxisAngleSolutions, Index3, Rotation
 from robotic.symbolic import (
     Compiled,
+    Expression,
     MissingParameterError,
     Numeric,
     ParameterShapeError,
@@ -30,6 +31,7 @@ __all__ = [
     "Compiled",
     "Direction",
     "Displacement",
+    "Expression",
     "Frame",
     "FrameMismatchError",
     "FreeAxis",

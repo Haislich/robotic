@@ -10,7 +10,7 @@ metadata:
 
 Name methods by what they do in full words (e.g. `evaluate`, not `at`); avoid very short cryptic method names.
 
-No name may clash with the language (keywords, soft keywords, builtins). Escaping a keyword with a trailing underscore (`from_`) counts as a clash: find a different word instead (2026-10-24: `to=`/`from_=` became `of=`/`relative_to=`).
+No name may clash with the language (keywords, soft keywords, builtins). Escaping a keyword with a trailing underscore (`from_`) counts as a clash: find a different word instead (2026-10-24: `to=`/`from_=` became `of=`/`relative_to=`). Methods and attributes do not clash: they live in their class's namespace and never shadow a builtin (user, 2026-10-30, on `compile`; agrees with D11's "methods are namespaced by their class"). The rule still covers free functions, variables and parameters, which do shadow.
 
 "Immutable by default" in CLAUDE.md means: avoid hidden state mutation that makes the data flow hard to trace. It does not require frozen dataclasses specifically — plain classes with read-only properties are fine (and were chosen because ty 0.0.91 infers frozen-dataclass generics as invariant).
 

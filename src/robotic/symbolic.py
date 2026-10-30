@@ -1,7 +1,8 @@
-"""The typed boundary around sympy: symbolic scalars, compilation and compiled results.
+"""The typed boundary around sympy: constants, expressions and their compilation.
 
 This is the only module that touches sympy. Every other module builds on the public
-`Scalar` API, so formulas stay typed from the first symbol to the last simplification.
+`Scalar` and `Expression` API, so formulas stay typed from the first symbol to the last
+simplification, and the type says whether a value is fixed.
 """
 
 import dataclasses
@@ -9,7 +10,7 @@ import operator
 import typing
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, NoReturn, Self, override
+from typing import TYPE_CHECKING, ClassVar, NoReturn, Self, final, overload, override
 
 import jax
 import jax.numpy as jnp
@@ -18,13 +19,15 @@ from jax.core import Tracer
 from jax.typing import ArrayLike
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
 
     from _typeshed import DataclassInstance
 
 jax.config.update(name="jax_enable_x64", val=True)
 
 type ScalarLike = Scalar | int
+
+_DIGITS = 30
 
 
 class _Incomparable:
@@ -33,8 +36,8 @@ class _Incomparable:
     __slots__ = ()
 
     _ADVICE: ClassVar[str] = (
-        "symbolic values have no equality: whether two of them are equal on the "
-        "whole domain cannot be known; compile them and compare the numbers at a "
+        "symbolic values have no equality: compare constants with is_close; "
+        "evaluate expressions, or compile them and compare the numbers at a "
         "configuration"
     )
 
@@ -54,11 +57,17 @@ class _Incomparable:
         raise TypeError(self._ADVICE)
 
 
-class Symbolic(_Incomparable, ABC):
+@dataclass(frozen=True)
+class _NoParameters:
+    """The parameters of a constant quantity: nothing varies."""
+
+
+class Symbolic[K: (Scalar, Expression)](_Incomparable, ABC):
     """A symbolic quantity: simplifiable, printable as LaTeX and compilable to JAX.
 
-    It has no equality, hash or truth value: `==`, `!=`, `hash` and `bool` raise
-    `TypeError`.
+    `K` says whether it is a constant (`Scalar`) or built from a symbol
+    (`Expression`). It has no equality, hash or truth value: `==`, `!=`, `hash` and
+    `bool` raise `TypeError`.
     """
 
     __slots__ = ()
@@ -83,22 +92,48 @@ class Symbolic(_Incomparable, ABC):
     def _layout(self) -> Layout: ...
 
     @staticmethod
-    def _bmatrix(rows: Iterable[Iterable[Scalar]]) -> str:
+    def _bmatrix(rows: Iterable[Iterable[Scalar | Expression]]) -> str:
         lines = (" & ".join(entry.latex() for entry in row) for row in rows)
         return rf"\begin{{bmatrix}} {r' \\ '.join(lines)} \end{{bmatrix}}"
 
-    def compile[P: DataclassInstance](self, parameters: type[P]) -> Compiled[P, Self]:
-        """Compile the quantity to a JAX function of a parameters dataclass.
+    @overload
+    def compile[T: Symbolic[Scalar]](self: T) -> Numeric[T]: ...
+
+    @overload
+    def compile[T: Symbolic[Scalar] | Symbolic[Expression], P: DataclassInstance](
+        self: T, parameters: type[P]
+    ) -> Compiled[P, T]: ...
+
+    def compile[P: DataclassInstance](
+        self: Symbolic[Scalar] | Symbolic[Expression],
+        parameters: type[P] | None = None,
+    ) -> (
+        Numeric[Symbolic[Scalar] | Symbolic[Expression]]
+        | Compiled[P, Symbolic[Scalar] | Symbolic[Expression]]
+    ):
+        """Compile the quantity to JAX.
 
         Args:
             parameters: A dataclass whose fields, each annotated `float` or
-                `jax.typing.ArrayLike`, name the symbols of the quantity. Extra fields
-                are allowed.
+                `jax.typing.ArrayLike`, name the symbols of the quantity; extra fields
+                are allowed. Omitted for a constant, which has nothing to vary.
 
         Returns:
-            The compiled function.
+            The compiled function of the parameters; for a constant compiled without
+            parameters, its compiled value.
+
+        Raises:
+            TypeError: A symbolic quantity compiled without parameters.
         """
-        return Compiled(self, parameters)
+        if parameters is not None:
+            return Compiled(self, parameters)
+        if not self._layout().is_constant:
+            message = (
+                f"{self._layout().label} is symbolic: compile it against a "
+                "parameters dataclass naming its symbols"
+            )
+            raise TypeError(message)
+        return Compiled(self, _NoParameters)(_NoParameters())
 
 
 @dataclass(frozen=True, eq=False)
@@ -113,39 +148,31 @@ class Layout:
     """
 
     label: str
-    entries: tuple[Scalar, ...]
+    entries: tuple[Scalar | Expression, ...]
     shape: tuple[int, ...]
 
+    @property
+    def is_constant(self) -> bool:
+        """Whether every entry is a constant."""
+        return all(isinstance(entry, Scalar) for entry in self.entries)
 
-class Scalar(Symbolic):
-    """A symbolic scalar expression, exact: built from integers, constants and symbols.
 
-    Arithmetic accepts a scalar or an `int` on either side; a `float` is rejected, so
-    every value stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`).
+class _Value[K: (Scalar, Expression)](Symbolic[K]):
+    """Exact arithmetic and functions shared by constants and expressions.
+
+    An operation returns a constant only when every operand is a constant or an `int`:
+    the kind of the result follows the kinds of the operands, not its value.
     """
 
     __slots__ = ("_expression",)
 
     _expression: sympy.Expr
 
-    def __init__(self, value: ScalarLike) -> None:
-        """Build a constant scalar.
+    @abstractmethod
+    def _of(self, expression: sympy.Expr) -> K: ...
 
-        Args:
-            value: An exact integer, or a scalar to copy.
-
-        Raises:
-            TypeError: The value is not an `int` or a `Scalar` (a `float`, a `bool`).
-        """
-        if not Scalar._is_exact(value):
-            raise TypeError(Scalar._not_exact(value))
-        self._expression = Scalar._expression_of(value)
-
-    @classmethod
-    def _wrap(cls, expression: sympy.Expr) -> Scalar:
-        scalar = object.__new__(Scalar)
-        scalar._expression = expression
-        return scalar
+    @abstractmethod
+    def _accepts(self, other: object) -> bool: ...
 
     @staticmethod
     def _is_exact(value: object) -> bool:
@@ -154,52 +181,29 @@ class Scalar(Symbolic):
     @staticmethod
     def _not_exact(value: object) -> str:
         return (
-            f"a symbolic scalar takes an exact number, an int or a Scalar, not "
-            f"{type(value).__name__} {value!r}; write Scalar(3) / 10 for 0.3 and "
-            "Scalar.pi() for pi"
+            f"a symbolic scalar takes an exact number, an int, a Scalar or an "
+            f"Expression, not {type(value).__name__} {value!r}; write Scalar(3) / 10 "
+            "for 0.3 and Scalar.pi() for pi"
         )
 
     @staticmethod
-    def _expression_of(value: ScalarLike) -> sympy.Expr:
-        if not Scalar._is_exact(value):
-            raise TypeError(Scalar._not_exact(value))
+    def _expression_of(value: ScalarLike | Expression) -> sympy.Expr:
         match value:
-            case Scalar():
+            case Scalar() | Expression():
                 return value._expression
             case int():
                 return sympy.Integer(value)
 
     def _combined(
         self,
-        other: ScalarLike,
+        other: K | ScalarLike,
         operation: Callable[[sympy.Expr, sympy.Expr], sympy.Expr],
-    ) -> Scalar:
-        if not Scalar._is_exact(other):
+    ) -> K:
+        if not self._accepts(other):
             return NotImplemented
-        return Scalar._wrap(operation(self._expression, Scalar._expression_of(other)))
+        return self._of(operation(self._expression, _Value._expression_of(other)))
 
-    @classmethod
-    def symbol(cls, name: str) -> Symbol:
-        """Create the real symbol with this name.
-
-        Args:
-            name: The symbol's name; equal names give the same symbol.
-
-        Returns:
-            The symbol.
-        """
-        return Symbol(name)
-
-    @classmethod
-    def pi(cls) -> Scalar:
-        """Exact π.
-
-        Returns:
-            The exact constant π.
-        """
-        return Scalar._wrap(sympy.pi)
-
-    def __add__(self, other: ScalarLike) -> Scalar:
+    def __add__(self, other: K | ScalarLike) -> K:
         """Add.
 
         Returns:
@@ -207,7 +211,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.add)
 
-    def __radd__(self, other: int) -> Scalar:
+    def __radd__(self, other: ScalarLike) -> K:
         """Add from the left.
 
         Returns:
@@ -215,7 +219,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, lambda mine, theirs: theirs + mine)
 
-    def __sub__(self, other: ScalarLike) -> Scalar:
+    def __sub__(self, other: K | ScalarLike) -> K:
         """Subtract.
 
         Returns:
@@ -223,7 +227,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.sub)
 
-    def __rsub__(self, other: int) -> Scalar:
+    def __rsub__(self, other: ScalarLike) -> K:
         """Subtract from a number.
 
         Returns:
@@ -231,7 +235,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, lambda mine, theirs: theirs - mine)
 
-    def __mul__(self, other: ScalarLike) -> Scalar:
+    def __mul__(self, other: K | ScalarLike) -> K:
         """Multiply.
 
         Returns:
@@ -239,7 +243,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.mul)
 
-    def __rmul__(self, other: int) -> Scalar:
+    def __rmul__(self, other: ScalarLike) -> K:
         """Multiply from the left.
 
         Returns:
@@ -247,7 +251,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, lambda mine, theirs: theirs * mine)
 
-    def __truediv__(self, other: ScalarLike) -> Scalar:
+    def __truediv__(self, other: K | ScalarLike) -> K:
         """Divide; integer quotients stay exact fractions.
 
         Returns:
@@ -255,7 +259,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, operator.truediv)
 
-    def __rtruediv__(self, other: int) -> Scalar:
+    def __rtruediv__(self, other: ScalarLike) -> K:
         """Divide a number.
 
         Returns:
@@ -263,7 +267,7 @@ class Scalar(Symbolic):
         """
         return self._combined(other, lambda mine, theirs: theirs / mine)
 
-    def __pow__(self, exponent: ScalarLike) -> Scalar:
+    def __pow__(self, exponent: K | ScalarLike) -> K:
         """Raise to a power.
 
         Returns:
@@ -271,7 +275,7 @@ class Scalar(Symbolic):
         """
         return self._combined(exponent, operator.pow)
 
-    def __rpow__(self, base: int) -> Scalar:
+    def __rpow__(self, base: ScalarLike) -> K:
         """Raise a number to this power.
 
         Returns:
@@ -279,73 +283,78 @@ class Scalar(Symbolic):
         """
         return self._combined(base, lambda mine, theirs: theirs**mine)
 
-    def __neg__(self) -> Scalar:
+    def __neg__(self) -> K:
         """Negate.
 
         Returns:
             `-self`.
         """
-        return Scalar._wrap(-self._expression)
+        return self._of(-self._expression)
 
-    def cos(self) -> Scalar:
+    def cos(self) -> K:
         """Cosine, argument in radians.
 
         Returns:
             `cos(self)`.
         """
-        return Scalar._wrap(sympy.cos(self._expression))
+        return self._of(sympy.cos(self._expression))
 
-    def sin(self) -> Scalar:
+    def sin(self) -> K:
         """Sine, argument in radians.
 
         Returns:
             `sin(self)`.
         """
-        return Scalar._wrap(sympy.sin(self._expression))
+        return self._of(sympy.sin(self._expression))
 
-    def tan(self) -> Scalar:
+    def tan(self) -> K:
         """Tangent, argument in radians.
 
         Returns:
             `tan(self)`.
         """
-        return Scalar._wrap(sympy.tan(self._expression))
+        return self._of(sympy.tan(self._expression))
 
-    def atan2(self, x: ScalarLike) -> Scalar:
+    @overload
+    def atan2(self, x: K | ScalarLike) -> K: ...
+
+    @overload
+    def atan2(self, x: Expression) -> Expression: ...
+
+    def atan2(self, x: K | ScalarLike | Expression) -> K | Expression:
         """Two-argument arctangent with `self` as the y coordinate.
 
         Args:
             x: The x coordinate.
 
         Returns:
-            The angle of (x, self) in (-pi, pi].
-        """
-        return Scalar._wrap(sympy.atan2(self._expression, Scalar._expression_of(x)))
+            The angle of (x, self) in (-pi, pi]; an expression if either is one.
 
-    def sqrt(self) -> Scalar:
+        Raises:
+            TypeError: `x` is not exact.
+        """
+        if not (_Value._is_exact(x) or isinstance(x, Expression)):
+            raise TypeError(_Value._not_exact(x))
+        angle = sympy.atan2(self._expression, _Value._expression_of(x))
+        if isinstance(x, Expression):
+            return x._of(angle)
+        return self._of(angle)
+
+    def sqrt(self) -> K:
         """Exact principal square root.
 
         Returns:
             `sqrt(self)`.
         """
-        return Scalar._wrap(sympy.sqrt(self._expression))
+        return self._of(sympy.sqrt(self._expression))
 
-    def exp(self) -> Scalar:
+    def exp(self) -> K:
         """Exact exponential.
 
         Returns:
             `exp(self)`.
         """
-        return Scalar._wrap(sympy.exp(self._expression))
-
-    @override
-    def simplify(self) -> Scalar:
-        """An equal expression, in a simpler form when one is found.
-
-        Returns:
-            The simplified scalar; its form is not promised.
-        """
-        return Scalar._wrap(self._simplified())
+        return self._of(sympy.exp(self._expression))
 
     def _simplified(self) -> sympy.Expr:
         match sympy.factor_terms(sympy.trigsimp(self._expression, method="fu")):
@@ -366,7 +375,8 @@ class Scalar(Symbolic):
 
     @override
     def _layout(self) -> Layout:
-        return Layout(label="Scalar", entries=(self,), shape=())
+        label = "Scalar" if isinstance(self, Scalar) else "Expression"
+        return Layout(label=label, entries=(self._of(self._expression),), shape=())
 
     @override
     def __repr__(self) -> str:
@@ -378,24 +388,189 @@ class Scalar(Symbolic):
         return str(self._expression)
 
 
-def _is_zero(value: Scalar) -> bool:
-    return bool(value._simplified() == 0)
+@final
+class Scalar(_Value["Scalar"]):
+    """A constant: built from integers and exact constants only, so its value is fixed.
+
+    Arithmetic accepts a constant or an `int` on either side and gives a constant;
+    with an expression it gives an expression. A `float` is rejected, so every value
+    stays exact (`Scalar(3) / 10`, `Scalar.pi() / 2`). Constants compare with a
+    tolerance through `is_close`.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, value: ScalarLike) -> None:
+        """Build a constant.
+
+        Args:
+            value: An exact integer, or a constant to copy.
+
+        Raises:
+            TypeError: The value is not an `int` or a `Scalar` (a `float`, a `bool`,
+                an expression).
+        """
+        if not Scalar._is_exact(value):
+            raise TypeError(Scalar._not_exact(value))
+        self._expression = Scalar._expression_of(value)
+
+    @classmethod
+    def _wrap(cls, expression: sympy.Expr) -> Scalar:
+        scalar = object.__new__(Scalar)
+        scalar._expression = expression
+        return scalar
+
+    @override
+    def _of(self, expression: sympy.Expr) -> Scalar:
+        return Scalar._wrap(expression)
+
+    @override
+    def _accepts(self, other: object) -> bool:
+        return Scalar._is_exact(other)
+
+    @classmethod
+    def pi(cls) -> Scalar:
+        """Exact π.
+
+        Returns:
+            The exact constant π.
+        """
+        return Scalar._wrap(sympy.pi)
+
+    def is_close(self, other: ScalarLike, tolerance: float = 1e-9) -> bool:
+        """Whether two constants differ by at most `tolerance`.
+
+        The difference is evaluated to 30 significant digits, so the tolerance is the
+        only margin; no simplification is needed to recognize a zero.
+
+        Args:
+            other: The constant or `int` to compare with.
+            tolerance: The largest absolute difference accepted, not negative.
+
+        Returns:
+            True when |self - other| <= tolerance; false when the difference is
+            undefined (`nan`, a value at a singular configuration).
+
+        Raises:
+            TypeError: `other` is not a constant or an `int` (an expression: evaluate
+                it first), or `tolerance` is not a number.
+            ValueError: `tolerance` is negative.
+        """
+        if not Scalar._is_exact(other):
+            message = (
+                f"is_close compares a constant with a constant or an int, not "
+                f"{type(other).__name__} {other!r}; evaluate an expression first"
+            )
+            raise TypeError(message)
+        if isinstance(tolerance, bool) or not isinstance(tolerance, int | float):
+            message = f"a tolerance is a number, not {type(tolerance).__name__}"
+            raise TypeError(message)
+        if tolerance < 0:
+            message = f"a tolerance is not negative, not {tolerance}"
+            raise ValueError(message)
+        difference = sympy.N(self._expression - Scalar._expression_of(other), _DIGITS)
+        magnitude = abs(difference)
+        if magnitude is sympy.nan:
+            return False
+        return bool(magnitude <= tolerance)
+
+    @override
+    def simplify(self) -> Self:
+        """An equal constant, in a simpler form when one is found.
+
+        Returns:
+            The simplified constant; its form is not promised.
+        """
+        made = object.__new__(type(self))
+        made._expression = self._simplified()
+        return made
 
 
-def _has_symbols(value: Scalar) -> bool:
-    return bool(value._expression.free_symbols)
+class Expression(_Value["Expression"]):
+    """A value built from at least one symbol, whatever it simplifies to.
+
+    Its value is not fixed until its symbols are, so it has no tolerance comparison:
+    `evaluate` substitutes exact values and gives the constant.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, value: ScalarLike | Expression) -> None:
+        """Take a constant or an expression as an expression.
+
+        Args:
+            value: An exact integer, a constant or an expression to copy.
+
+        Raises:
+            TypeError: The value is not exact (a `float`, a `bool`).
+        """
+        if not (Expression._is_exact(value) or isinstance(value, Expression)):
+            raise TypeError(Expression._not_exact(value))
+        self._expression = Expression._expression_of(value)
+
+    @override
+    def _of(self, expression: sympy.Expr) -> Expression:
+        made = object.__new__(Expression)
+        made._expression = expression
+        return made
+
+    @override
+    def _accepts(self, other: object) -> bool:
+        return Expression._is_exact(other) or isinstance(other, Expression)
+
+    def evaluate(self, values: Mapping[str, ScalarLike] | None = None) -> Scalar:
+        """Substitute exact values for the symbols.
+
+        Args:
+            values: The value of each symbol, by name; values for symbols that do not
+                occur are allowed. Omitted when no symbol is left.
+
+        Returns:
+            The constant.
+
+        Raises:
+            TypeError: A name is not a string or a value is not exact.
+            MissingParameterError: A symbol has no value.
+        """
+        given = {} if values is None else values
+        for name, value in given.items():
+            if not isinstance(name, str):
+                message = f"values are given by symbol name, not {name!r}"
+                raise TypeError(message)
+            if not Expression._is_exact(value):
+                raise TypeError(Expression._not_exact(value))
+        names = frozenset(str(symbol) for symbol in self._expression.free_symbols)
+        missing = names - frozenset(given)
+        if missing:
+            raise MissingParameterError(missing)
+        substitution = {
+            sympy.Symbol(name, real=True): Expression._expression_of(value)
+            for name, value in given.items()
+        }
+        return Scalar._wrap(self._expression.xreplace(substitution))
+
+    @override
+    def simplify(self) -> Self:
+        """An equal expression, in a simpler form when one is found.
+
+        Returns:
+            The simplified expression; its form is not promised.
+        """
+        made = object.__new__(type(self))
+        made._expression = self._simplified()
+        return made
 
 
-class Symbol(Scalar):
-    """A real symbol: a variable of the formulas, matched by name at compile time."""
+class Symbol(Expression):
+    """A real variable of the formulas, matched by name when evaluated or compiled."""
 
     __slots__ = ()
 
     def __init__(self, name: str) -> None:
-        """Create the real symbol with this name.
+        """Create the real variable with this name.
 
         Args:
-            name: The symbol's name; equal names give the same symbol.
+            name: The variable's name; equal names give the same variable.
 
         Raises:
             TypeError: The name is not a string.
@@ -415,21 +590,63 @@ class Symbol(Scalar):
         return self
 
 
+@dataclass(frozen=True, eq=False)
+class _Constants:
+    """Values that are all constants: a composite built from them is constant."""
+
+    values: tuple[Scalar, ...]
+
+    @classmethod
+    def or_expressions(
+        cls, values: Iterable[ScalarLike | Expression]
+    ) -> _Constants | _Expressions:
+        """Take the values as constants, or all as expressions if one is.
+
+        Returns:
+            The constants, or the expressions.
+        """
+        given = tuple(values)
+        constants = tuple(value for value in given if not isinstance(value, Expression))
+        if len(constants) == len(given):
+            return _Constants(tuple(Scalar(value) for value in constants))
+        return _Expressions.of(given)
+
+
+@dataclass(frozen=True, eq=False)
+class _Expressions:
+    """Values that are all expressions: a composite built from them is symbolic."""
+
+    values: tuple[Expression, ...]
+
+    @classmethod
+    def of(cls, values: Iterable[ScalarLike | Expression]) -> _Expressions:
+        """Take every value as an expression, constants included.
+
+        Returns:
+            The expressions.
+        """
+        return _Expressions(tuple(Expression(value) for value in values))
+
+
 class MissingParameterError(ValueError):
-    """A free symbol of a compiled quantity has no field in the parameters dataclass."""
+    """A symbol has no value: no field when compiling, no entry when evaluating."""
 
     def __init__(
-        self, parameters: type[DataclassInstance], names: frozenset[str]
+        self,
+        names: frozenset[str],
+        parameters: type[DataclassInstance] | None = None,
     ) -> None:
-        """Name the parameters class and the symbols without a field.
+        """Name the symbols without a value, and the parameters class if any.
 
         Args:
-            parameters: The parameters dataclass.
-            names: The symbols without a field.
+            names: The symbols without a value.
+            parameters: The parameters dataclass, when compiling.
         """
-        super().__init__(
-            f"{parameters.__name__} has no field for {', '.join(sorted(names))}"
-        )
+        listed = ", ".join(sorted(names))
+        if parameters is None:
+            super().__init__(f"no value given for {listed}")
+        else:
+            super().__init__(f"{parameters.__name__} has no field for {listed}")
 
 
 class ParameterTypeError(TypeError):
@@ -462,7 +679,7 @@ class ParameterShapeError(ValueError):
         )
 
 
-class Compiled[P: DataclassInstance, T: Symbolic]:
+class Compiled[P: DataclassInstance, T: Symbolic[Scalar] | Symbolic[Expression]]:
     """A symbolic quantity compiled to a JIT-compiled JAX function of `P`."""
 
     _evaluate: Callable[..., Numeric[T]]
@@ -475,17 +692,17 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
 
         Args:
             quantity: The symbolic quantity.
-            parameters: A dataclass whose fields name the symbols of the quantity,
-                each annotated `float` (one configuration) or `jax.typing.ArrayLike`
-                (batched code). Extra fields are allowed.
+            parameters: A dataclass class whose fields name the symbols of the
+                quantity, each annotated `float` (one configuration) or
+                `jax.typing.ArrayLike` (batched code). Extra fields are allowed.
 
         Raises:
-            TypeError: `parameters` is not a dataclass.
+            TypeError: `parameters` is not a dataclass class (an instance included).
             ParameterTypeError: A field is annotated neither `float` nor `ArrayLike`.
             MissingParameterError: A free symbol of the quantity has no field.
         """
-        if not dataclasses.is_dataclass(parameters):
-            message = f"parameters must be a dataclass, not {parameters!r}"
+        if not (isinstance(parameters, type) and dataclasses.is_dataclass(parameters)):
+            message = f"parameters must be a dataclass class, not {parameters!r}"
             raise TypeError(message)
         layout = quantity._layout()
         hints = typing.get_type_hints(parameters)
@@ -501,7 +718,7 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         )
         missing = free - frozenset(names)
         if missing:
-            raise MissingParameterError(parameters, missing)
+            raise MissingParameterError(missing, parameters)
         symbols = [sympy.Symbol(name, real=True) for name in names]
         self._parameters = parameters
         self._names = names
@@ -543,7 +760,7 @@ class Compiled[P: DataclassInstance, T: Symbolic]:
         return self._evaluate(*(getattr(values, name) for name in self._names))
 
 
-class Numeric[T: Symbolic](_Incomparable):
+class Numeric[T: Symbolic[Scalar] | Symbolic[Expression]](_Incomparable):
     """The compiled value of a `T`: bare components, with the meaning kept in the type.
 
     A registered JAX pytree: the components are its only child, the printed type its
@@ -587,13 +804,17 @@ class Numeric[T: Symbolic](_Incomparable):
         return f"Numeric[{self._label}]({shown})"
 
     @staticmethod
-    def _flatten(numeric: Numeric[Symbolic]) -> tuple[tuple[jax.Array], str]:
+    def _flatten(
+        numeric: Numeric[Symbolic[Expression]],
+    ) -> tuple[tuple[jax.Array], str]:
         return (numeric._components,), numeric._label
 
     @staticmethod
-    def _unflatten(label: str, children: tuple[jax.Array]) -> Numeric[Symbolic]:
+    def _unflatten(
+        label: str, children: tuple[jax.Array]
+    ) -> Numeric[Symbolic[Expression]]:
         (components,) = children
-        return Numeric[Symbolic](label, components)
+        return Numeric[Symbolic[Expression]](label, components)
 
 
 jax.tree_util.register_pytree_node(Numeric, Numeric._flatten, Numeric._unflatten)
